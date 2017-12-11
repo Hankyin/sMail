@@ -2,36 +2,18 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
-#include <QTcpSocket>
 #include <QByteArray>
+#include <QSqlDatabase>
 #include <QShowEvent>
 #include <QList>
 #include <QListWidget>
 #include <QListWidgetItem>
+#include <QTcpSocket>
+#include <QUrl>
 #include "smtp.h"
 #include "mime.h"
 #include "pop.h"
-
-class UserInfo
-{
-public:
-    UserInfo() {}
-    //当前登录用户信息
-    int id;
-    QString userName;
-    QString userMailAddr;
-    QString userMailPasswd;
-    QString SMTPServerAddr;
-    QString SMTPAccount;
-    QString SMTPPasswd;
-    int SMTPPort;
-    bool SMTPSSL;
-    QString POPServerAddr;
-    QString POPAccount;
-    QString POPPasswd;
-    int POPPort;
-    bool POPSSL;
-};
+#include "logindialog.h"
 
 namespace Ui {
 class MainWindow;
@@ -45,16 +27,28 @@ public:
     explicit MainWindow(QWidget *parent = 0);
     ~MainWindow();
 signals:
-
+    void getMailCount(int mailCount);
+    void getMailHead(QByteArray &head);
 private slots:
     void slotWriteMail();
-    void slotRefresh();
+    void slotRefreshStart();
+    void slotRefreshStat(uint mailCount);
+    void slotRefreshTop(int mailId, QByteArray head);
+    void slotRefreshUidl(int mailId,QByteArray uid);
     void slotReadMail(QListWidgetItem *item);
+    void slotRetr(int mailId,QByteArray mail);
     void slotAfterShow();
+    void slotOpenExternalLink(const QUrl &url);
+    void slotPOPDown(bool err);
 private:
     Ui::MainWindow *ui;
     QList<UserInfo*> userInfoList;
-    QByteArray downloadMail(UserInfo *user,int mailId);
+    POP pop;
+//    SMTP smtp;
+    QSqlDatabase db;
+    bool createUser();
+    void popLogin();
+    void updateListWidget(UserInfo &u);
 };
 
 

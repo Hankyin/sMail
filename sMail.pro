@@ -44,3 +44,6 @@ FORMS += \
         mainwindow.ui \
     maileditwidget.ui \
     logindialog.ui
+
+RESOURCES += \
+    res.qrc

@@ -117,7 +117,7 @@ public:
     QString getFrom() {return this->from;}
     QString getTo() {return this->to;}
     QString getSubject() {return this->subject;}
-    QDate getDate() {return this->date;}
+    QDateTime getDateTime() {return this->datetime;}
     QString getPlain() {return this->plain;}
     QString getHtml() {return this->html;}
 private:
@@ -130,7 +130,7 @@ private:
     QString from;
     QString to;
     QString subject;
-    QDate date;
+    QDateTime datetime;
     QString plain;
     QString html;
 };

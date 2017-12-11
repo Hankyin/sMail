@@ -1,8 +1,37 @@
 #include "pop.h"
 
+PCommend::PCommend(int cmd, QList<QByteArray> para)
+{
+    this->cmdType = cmd;
+    this->cmdParaList = para;
+    this->cmdContent.append(POP::POPCMDConvert(cmd));
+    for(auto p : para)
+    {
+        this->cmdContent.append(" ");
+        this->cmdContent.append(p);
+    }
+}
+
+PCommend::PCommend(const PCommend &cmd)
+{
+    this->cmdContent = cmd.cmdContent;
+    this->cmdType = cmd.cmdType;
+    this->cmdParaList = cmd.cmdParaList;
+}
+
+
 POP::POP(QObject *parent) : QObject(parent)
 {
-    this->isDebugMode = false;
+    this->tcpSocket = new QTcpSocket();
+    connect(this,SIGNAL(sendCmd()),this,SLOT(slotSend()));
+    connect(this->tcpSocket,SIGNAL(readyRead()),this,SLOT(slotReceive()));
+    connect(this->tcpSocket,SIGNAL(connected()),this,SLOT(slotConnedted()));
+    connect(this->tcpSocket,SIGNAL(error(QAbstractSocket::SocketError)),this,SLOT(slotError()));
+}
+
+POP::~POP()
+{
+    delete this->tcpSocket;
 }
 
 void POP::setDebugMode(bool debug)
@@ -10,235 +39,211 @@ void POP::setDebugMode(bool debug)
     this->isDebugMode = debug;
 }
 
-bool POP::connectToServer(const QString addr, int port, bool ssl)
+void POP::connectToServer(const QString addr, int port, bool ssl)
 {
-    bool ok = false;
-    QByteArray retBytes;
-    this->tcpSocket.connectToHost(addr,port);
-    ok = this->tcpSocket.waitForConnected();
-    if(!ok)
-    {
-        qDebug()<<"pop can not connect ot server"<<endl;
-        return false;
-    }
-    retBytes = POPRead();
-    if(retBytes.isEmpty())
-    {
-        return false;
-    }
-    return true;
+    if(this->isDebugMode)
+        qDebug()<<"connectToServer"<<endl;
+    this->tcpSocket->connectToHost(addr,port);
 }
 
-bool POP::login(const QString username, const QString password)
+void POP::user(const QString userName)
 {
-    QByteArray retBytes;
-    QByteArray request;
-    request.append("user");
-    request.append(" ");
-    request.append(username);
-    POPWrite(request);
-    retBytes = POPRead();
-    if(retBytes.isEmpty())
-    {
-        qDebug()<<"pop username err"<<endl;
-        return false;
-    }
-    request.clear();
-    request.append("pass");
-    request.append(" ");
-    request.append(password.toUtf8());
-    POPWrite(request);
-    retBytes.clear();
-    retBytes = POPRead();
-    if(retBytes.isEmpty())
-    {
-        qDebug()<<"pop password err"<<endl;
-        return false;
-    }
-    return true;
+    QList<QByteArray> para;
+    para.append(userName.toUtf8());
+    PCommend cmd(POP::USER,para);
+    this->POPCMDList.append(cmd);
+    slotSend();
 }
 
-bool POP::list(int mailIndex,qint64 &mailSize)
+void POP::pass(const QString passwd)
 {
-    QByteArray retBytes;
-    QByteArray request;
-    request.append("list");
-    request.append(" ");
-    request.append(QString::number(mailIndex));
-    POPWrite(request);
-    retBytes = POPRead();
-    if(retBytes.isEmpty())
-    {
-        qDebug()<<"pop list num error"<<endl;
-        return false;
-    }
-    QList<QByteArray> retList = retBytes.split(' ');
-    mailSize = retList.at(2).toLong();
-    return true;
+    QList<QByteArray> para;
+    para.append(passwd.toUtf8());
+    PCommend cmd(POP::PASS,para);
+    this->POPCMDList.append(cmd);
+    slotSend();
 }
 
-bool POP::list(QList<qint64> &mailSizeList)
+void POP::list(int mailIndex)
 {
-    QByteArray retBytes;
-    POPWrite("list");
-    retBytes = POPRead("\r\n.\r\n");
-    if(retBytes.isEmpty())
+    QList<QByteArray> para;
+    if(mailIndex != 0)
     {
-        qDebug()<<"popo list err"<<endl;
-        return false;
+        para.append(QString::number(mailIndex).toUtf8());
     }
-    mailSizeList.append(0);//邮件从1开始
-    QByteArray n;
-    for(int i = 0;i < retBytes.size() - 1;)
-    {
-        if(retBytes.at(i) != '\r' || retBytes.at(i+1) != '\n')
-        {
-            n.append(retBytes.at(i));
-            i++;
-        }
-        else
-        {
-            if(n.at(0) >= '0' && n.at(0) <= '9')
-            {
-                mailSizeList.append(n.split(' ').at(1).toLongLong());
-            }
-            n.clear();
-            i += 2;
-        }
-    }
-    return true;
+    PCommend cmd(POP::LIST,para);
+    this->POPCMDList.append(cmd);
+    slotSend();
 }
 
-bool POP::stat(int &count, qint64 &totalSize)
+void POP::stat()
 {
-    QByteArray retBytes;
-    POPWrite("stat");
-    retBytes = POPRead();
-    if(retBytes.isEmpty())
-    {
-        qDebug()<<"pop stat err"<<endl;
-    }
-    count = retBytes.split(' ').at(1).toInt();
-    totalSize = retBytes.split(' ').at(2).toLong();
-    return true;
+    QList<QByteArray> para;
+    PCommend cmd(POP::STAT,para);
+    this->POPCMDList.append(cmd);
+    slotSend();
 }
 
-bool POP::retr(int mailIndex, QByteArray &mail)
+void POP::retr(int mailIndex)
 {
-    QByteArray retBytes;
-    QByteArray request;
-    request.append("retr");
-    request.append(" ");
-    request.append(QString::number(mailIndex));
-    POPWrite(request);
-    retBytes = POPRead("\r\n.\r\n");
-    if(retBytes.isEmpty())
-    {
-        qDebug()<<"pop retr error"<<endl;
-        return false;
-    }
-    mail = retBytes;
-    //删除开头和结尾的标示
-    mail.remove(0,mail.indexOf("\r\n") + 2);
-    mail.remove(mail.lastIndexOf("\r\n"),3);
-    return true;
+    QList<QByteArray> para;
+    para.append(QByteArray::number(mailIndex));
+    PCommend cmd(POP::RETR,para);
+    this->POPCMDList.append(cmd);
+    slotSend();
 }
 
-bool POP::dele(int mailIndex)
+void POP::dele(int mailIndex)
 {
-    QByteArray retBytes;
-    QByteArray request;
-    request.append("dele");
-    request.append(" ");
-    request.append(QString::number(mailIndex));
-    POPWrite(request);
-    retBytes = POPRead();
-    if(retBytes.isEmpty())
-    {
-        qDebug()<<"pop uidl error"<<endl;
-        return false;
-    }
-    return true;
+    QList<QByteArray> para;
+    para.append(QByteArray::number(mailIndex));
+    PCommend cmd(POP::DELE,para);
+    this->POPCMDList.append(cmd);
+    slotSend();
 }
 
-bool POP::uidl(int mailIndex, QByteArray &uid)
+void POP::uidl(int mailIndex)
 {
-    QByteArray retBytes;
-    QByteArray request;
-    request.append("uidl");
-    request.append(" ");
-    request.append(QString::number(mailIndex));
-    POPWrite(request);
-    retBytes = POPRead();
-    if(retBytes.isEmpty())
-    {
-        qDebug()<<"pop uidl error"<<endl;
-        return false;
-    }
-    uid = retBytes.split(' ').at(1);
-    return true;
+    QList<QByteArray> para;
+    para.append(QByteArray::number(mailIndex));
+    PCommend cmd(POP::UIDL,para);
+    this->POPCMDList.append(cmd);
+    slotSend();
 }
 
-bool POP::rest()
+void POP::rest()
 {
-    QByteArray retBytes;
-    POPWrite("rest");
-    retBytes = POPRead();
-    if(retBytes.isEmpty())
-    {
-        qDebug()<<"pop rest error"<<endl;
-        return false;
-    }
-    return true;
+    QList<QByteArray> para;
+    PCommend cmd(POP::REST,para);
+    this->POPCMDList.append(cmd);
+    slotSend();
 }
 
-bool POP::top(const int mailIndex, const int lines, QByteArray &summary)
+void POP::top(int mailIndex, int lines)
 {
-    QByteArray retBytes;
-    QByteArray request;
-    request.append("top");
-    request.append(" ");
-    request.append(QString::number(mailIndex));
-    request.append(" ");
-    request.append(QString::number(lines));
-    POPWrite(request);
-    retBytes = POPRead("\r\n.\r\n");
-    if(retBytes.isEmpty())
-    {
-        qDebug()<<"pop rest error"<<endl;
-        return false;
-    }
-    summary = retBytes;
-    //删除开头和结尾的标示
-    summary.remove(0,summary.indexOf("\r\n") + 2);
-    summary.remove(summary.lastIndexOf("\r\n"),3);
-    return true;
+    QList<QByteArray> para;
+    para.append(QByteArray::number(mailIndex));
+    para.append(QByteArray::number(lines));
+    PCommend cmd(POP::TOP,para);
+    this->POPCMDList.append(cmd);
+    slotSend();
 }
 
-bool POP::noop()
+void POP::noop()
 {
-    QByteArray retBytes;
-    POPWrite("noop");
-    retBytes = POPRead();
-    if(retBytes.isEmpty())
-    {
-        qDebug()<<"pop noop error"<<endl;
-        return false;
-    }
-    return true;
+    QList<QByteArray> para;
+    PCommend cmd(POP::NOOP,para);
+    this->POPCMDList.append(cmd);
+    slotSend();
 }
 
-bool POP::quit()
+void POP::quit()
 {
-    QByteArray retBytes;
-    POPWrite("quit");
-    retBytes = POPRead();
-    if(retBytes.isEmpty())
+    QList<QByteArray> para;
+    PCommend cmd(POP::QUIT,para);
+    this->POPCMDList.append(cmd);
+    slotSend();
+}
+
+void POP::slotSend()
+{
+    if(!this->isConnected || this->processing)
     {
-        qDebug()<<"pop quit error"<<endl;
-        return false;
+        //尚未连接到服务器或者正在处理命令,直接返回
+        return;
     }
-    return true;
+    if(this->POPCMDList.isEmpty())
+    {
+        emit down(false);
+        return;
+    }
+    this->processing = true;
+    this->curCmd = this->POPCMDList.first();
+        this->POPCMDList.pop_front();
+    POPWrite(this->curCmd.cmdContent);
+}
+
+void POP::slotReceive()
+{
+    QByteArray receive = this->tcpSocket->readAll();
+    this->receiveBuf.append(receive);
+    QByteArray endFlag;
+    if(curCmd.cmdType <= POP::RETR)
+    {
+        //返回值以回车结尾的命令
+        endFlag = "\r\n";
+    }
+    else
+    {
+        //返回值以.结尾的命令
+        endFlag = "\r\n.\r\n";
+    }
+    if(!this->receiveBuf.endsWith(endFlag))
+    {
+        //读取尚未完成
+        return;
+    }
+    if(isDebugMode)
+    {
+        qDebug()<<this->receiveBuf<<endl;
+    }
+    //结果分析
+    if(!this->receiveBuf.startsWith(REQ_OK))
+    {
+        //返回值错误
+        //TODO编写pop协议错误处理函数
+    }
+    //修饰服务器返回值
+    this->returnValue = this->receiveBuf;
+    if(curCmd.cmdType <= POP::RETR)
+    {
+        //返回值以回车结尾的命令
+        this->returnValue.remove(0,4);
+        this->returnValue.remove(this->returnValue.size()-2,2);
+    }
+    else
+    {
+        //返回值以.结尾的命令
+        this->returnValue.remove(0,returnValue.indexOf("\r\n") + 2);
+        this->returnValue.remove(this->returnValue.size()-3,3);
+    }
+    emit cmdFinish(this->curCmd.cmdType,this->returnValue);
+    switch (this->curCmd.cmdType) {
+    case TOP:
+        emit topFinish(this->curCmd.cmdParaList.at(0).toInt(),this->returnValue);
+        break;
+    case UIDL:
+        emit uidlFinish(this->curCmd.cmdParaList.at(0).toInt(),this->returnValue);
+        break;
+    case RETR:
+        emit retrFinish(this->curCmd.cmdParaList.at(0).toInt(),this->returnValue);
+        break;
+    case STAT:
+        emit statFinish(this->returnValue.split(' ').at(0).toUInt(),this->returnValue.split(' ').at(1).toLong());
+        break;
+    case QUIT:
+        this->isConnected = false;
+    default:
+        break;
+    }
+    this->receiveBuf.clear();
+    this->processing = false;
+    slotSend();
+}
+
+void POP::slotConnedted()
+{
+    if(isDebugMode)
+        qDebug()<<"connected"<<endl;
+    this->isConnected = true;
+    emit connected();
+    slotSend();
+}
+
+void POP::slotError()
+{
+    qDebug()<<this->tcpSocket->errorString()<<endl;
+    this->isConnected = false;
 }
 
 bool POP::POPWrite(const QByteArray block)
@@ -250,39 +255,49 @@ bool POP::POPWrite(const QByteArray block)
     {
         qDebug()<<sendBlock<<endl;
     }
-    this->tcpSocket.write(sendBlock);
+    this->tcpSocket->write(sendBlock);
     return true;
 }
 
-QByteArray POP::POPRead(const QByteArray endFlag)
+QByteArray POP::POPCMDConvert(int type)
 {
-    bool ok = false;
-    QByteArray receive;
-    while (1)
-    {
-        QByteArray block;
-        ok = tcpSocket.waitForReadyRead();
-        if(!ok)
-        {
-            qDebug()<<"pop timeout"<<endl;
-            break;
-        }
-        block.resize(tcpSocket.bytesAvailable());
-        tcpSocket.read(block.data(),block.size());
-        receive.append(block);
-        if(receive.endsWith(endFlag))
-        {
-            break;
-        }
+    QByteArray cmdByte;
+    switch (type) {
+    case POP::USER:
+        cmdByte = "user";
+        break;
+    case POP::PASS:
+        cmdByte = "pass";
+        break;
+    case POP::LIST:
+        cmdByte = "list";
+        break;
+    case POP::STAT:
+        cmdByte = "stat";
+        break;
+    case POP::RETR:
+        cmdByte = "retr";
+        break;
+    case POP::DELE:
+        cmdByte = "dele";
+        break;
+    case POP::UIDL:
+        cmdByte = "uidl";
+        break;
+    case POP::REST:
+        cmdByte = "rest";
+        break;
+    case POP::TOP:
+        cmdByte = "top";
+        break;
+    case POP::NOOP:
+        cmdByte = "noop";
+        break;
+    case POP::QUIT:
+        cmdByte = "quit";
+        break;
+    default:
+        break;
     }
-    if(isDebugMode)
-    {
-        qDebug()<<receive<<endl;
-    }
-    if(receive.split(' ').at(0) != REQ_OK)
-    {
-        qDebug()<<"pop return not ok"<<endl;
-        return QByteArray();
-    }
-    return receive;
+    return cmdByte;
 }

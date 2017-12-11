@@ -259,7 +259,7 @@ MailPraser::MailPraser(QByteArray mail)
     this->from = headMap.value("from");
     this->to = headMap.value("to");
     this->subject = MIME::HeadDecoding(headMap.value("subject"));
-    this->date = QDate::fromString(headMap.value("date"),Qt::RFC2822Date);
+    this->datetime = QDateTime::fromString(headMap.value("date"),Qt::RFC2822Date);
     if(mTEncoding == "quoted-printable")
     {
         content = MIME::Quoted_printableDecoder(rawContent);

@@ -77,18 +77,23 @@ void LoginDialog::slotCreateAcount()
         QMessageBox::critical(this,"错误","请填写完整信息");
         return;
     }
-    this->userName = ui->editUserName->text();
-    this->userMailAddr = ui->editMailAddr->text();
-    this->userMailPasswd = ui->editMailPasswd->text();
-    this->SMTPAccount = ui->editSMTPAccount->text();
-    this->SMTPServerAddr = ui->editSMTPServerAddr->text();
-    this->SMTPPasswd = ui->editSMTPPasswd->text();
-    this->SMTPPort = ui->editSMTPPort->text().toInt();
-    this->SMTPSSL = ui->checkSMTPSSL->isChecked();
-    this->POPAccount = ui->editPOPAccount->text();
-    this->POPServerAddr = ui->editPOPServerAddr->text();
-    this->POPPasswd = ui->editPOPPasswd->text();
-    this->POPPort = ui->editPOPPort->text().toInt();
-    this->POPSSL = ui->checkPOPSSL->isChecked();
+    this->newUser.userName = ui->editUserName->text();
+    this->newUser.userMailAddr = ui->editMailAddr->text();
+    this->newUser.userMailPasswd = ui->editMailPasswd->text();
+    this->newUser.SMTPAccount = ui->editSMTPAccount->text();
+    this->newUser.SMTPServerAddr = ui->editSMTPServerAddr->text();
+    this->newUser.SMTPPasswd = ui->editSMTPPasswd->text();
+    this->newUser.SMTPPort = ui->editSMTPPort->text().toInt();
+    this->newUser.SMTPSSL = ui->checkSMTPSSL->isChecked();
+    this->newUser.POPAccount = ui->editPOPAccount->text();
+    this->newUser.POPServerAddr = ui->editPOPServerAddr->text();
+    this->newUser.POPPasswd = ui->editPOPPasswd->text();
+    this->newUser.POPPort = ui->editPOPPort->text().toInt();
+    this->newUser.POPSSL = ui->checkPOPSSL->isChecked();
+    connectTest();
+}
+
+void LoginDialog::connectTest()
+{
     this->accept();
 }
