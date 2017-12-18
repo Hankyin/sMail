@@ -22,12 +22,12 @@ class POP : public QObject
 {
     Q_OBJECT
 public:
-    enum POPCMD{
+    enum POPCMD
+    {
         NOCMD,
         CONNECT,
         USER,
         PASS,
-        LIST,
         STAT,
         DELE,
         UIDL,
@@ -37,11 +37,18 @@ public:
         //下面这两个的返回值以.结尾，上面的以回车结尾
         RETR,
         TOP,
+        LIST,
     };
+    enum POPError
+    {
+        TCPError,
+        RetError,
+    };
+
     explicit POP(QObject *parent = nullptr);
     ~POP();
     void setDebugMode(bool debug);
-    void connectToServer(const QString addr, int port = 110, bool ssl = false);
+    void connectToServer(const QString addr, uint port = 110, bool ssl = false);
     void user(const QString userName);
     void pass(const QString passwd);
     void list(int mailIndex = 0);
@@ -54,21 +61,20 @@ public:
     void noop();
     void quit();
     bool getConnectionStatu() {return this->isConnected;}
+    QString& getErrorString(){return errorString;}
     const QByteArray REQ_OK = "+OK";
 
     static QByteArray POPCMDConvert(int type);
 signals:
-    void connected();
     void sendCmd();
     void down(bool err);
     //这个地方传引用可能导致问题，如果用引用，传出的retValue就是这个对象的returnValue，
     //假设网速很快或其他原因，外部对象还没有处理这个信号发出的retValue，returnValue就被新的返回值覆盖，这样就会出错。
-    void cmdFinish(int cmdId,QByteArray retValue);
     void topFinish(int mailId,QByteArray head);
     void uidlFinish(int mailId,QByteArray uid);
     void retrFinish(int mailId,QByteArray mail);
     void statFinish(uint count,qint64 totalSize);
-    void err();
+    void error(POPError errorType);
 public slots:
     void slotSend();
     void slotReceive();
@@ -78,12 +84,16 @@ private:
     QTcpSocket *tcpSocket;
     bool isDebugMode = false;
     bool processing = false;
+    bool isConnected = false;
+    QString popAddr;
+    uint port;
+    bool ssl;
     QList<PCommend> POPCMDList;
     PCommend curCmd;
     QByteArray receiveBuf;
     QByteArray returnValue;
-    bool isConnected = false;
-    bool POPWrite(const QByteArray block);
+    QString errorString;
+
 };
 
 #endif // POP_H

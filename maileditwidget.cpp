@@ -1,7 +1,6 @@
 #include "maileditwidget.h"
 #include "ui_maileditwidget.h"
 #include "mime.h"
-#include "smtp.h"
 #include <QDateTime>
 #include <QFileDialog>
 #include <QFile>
@@ -20,6 +19,7 @@ MailEditWidget::MailEditWidget(UserInfo *user, QWidget *parent) :
     connect(ui->btSend,SIGNAL(clicked(bool)),this,SLOT(slotSend()));
     connect(ui->btAttachment,SIGNAL(clicked(bool)),this,SLOT(slotAddAttachment()));
     connect(ui->btInsert,SIGNAL(clicked(bool)),this,SLOT(slotInsert()));
+    connect(&smtp,SIGNAL(down(bool)),this,SLOT(slotSendMailDown(bool)));
 }
 
 MailEditWidget::~MailEditWidget()
@@ -69,29 +69,13 @@ void MailEditWidget::slotSend()
     {
         mixed.append(*attachmentList.at(i));
     }
-
-//    QFile file("test.txt");
-//    if(file.open(QIODevice::WriteOnly))
-//    {
-//        file.write(mixed.getContent());
-//        file.close();
-//        return;
-//    }
-    //try
-    {
-    SMTP smtp;
     smtp.setDebugMode(true);
-    smtp.connectServer(userInfo->SMTPServerAddr,userInfo->SMTPPort,userInfo->SMTPSSL);
-    smtp.login(userInfo->SMTPAccount,userInfo->SMTPPasswd);
-    smtp.sendMail(mailFrom,rcptTo,mixed.getContent());//getcontent有问题，他不能多次调用
-    smtp.quit();
-    }
+    smtp.setServerAddr(userInfo->SMTPServerAddr,userInfo->SMTPPort,userInfo->SMTPSSL);
+    smtp.setLoginInfo(userInfo->SMTPAccount,userInfo->SMTPPasswd);
+    smtp.sendMail(rcptTo,mixed.getContent());
     //attacmhentList中存储的是指针，用完后记得删除
     qDeleteAll(this->attachmentList);
     this->attachmentList.clear();
-    QMessageBox::information(this,"邮件","邮件发送成功");
-    ui->btSend->setEnabled(true);
-    this->close();
 }
 
 void MailEditWidget::slotAddAttachment()
@@ -125,4 +109,11 @@ void MailEditWidget::slotInsert()
     imageFormat.setHeight( image.height() );
     imageFormat.setName( Uri.toString() );
     cursor.insertImage(imageFormat);
+}
+
+void MailEditWidget::slotSendMailDown(bool err)
+{
+    QMessageBox::information(this,"邮件","邮件发送成功");
+    ui->btSend->setEnabled(true);
+    this->close();
 }

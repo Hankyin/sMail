@@ -39,11 +39,15 @@ void POP::setDebugMode(bool debug)
     this->isDebugMode = debug;
 }
 
-void POP::connectToServer(const QString addr, int port, bool ssl)
+void POP::connectToServer(const QString addr, uint port, bool ssl)
 {
-    if(this->isDebugMode)
-        qDebug()<<"connectToServer"<<endl;
-    this->tcpSocket->connectToHost(addr,port);
+    this->popAddr = addr;
+    this->port = port;
+    this->ssl = ssl;
+    QList<QByteArray> para;
+    PCommend cmd(POP::CONNECT,para);
+    this->POPCMDList.append(cmd);
+    emit sendCmd();
 }
 
 void POP::user(const QString userName)
@@ -52,7 +56,7 @@ void POP::user(const QString userName)
     para.append(userName.toUtf8());
     PCommend cmd(POP::USER,para);
     this->POPCMDList.append(cmd);
-    slotSend();
+    emit sendCmd();
 }
 
 void POP::pass(const QString passwd)
@@ -61,7 +65,7 @@ void POP::pass(const QString passwd)
     para.append(passwd.toUtf8());
     PCommend cmd(POP::PASS,para);
     this->POPCMDList.append(cmd);
-    slotSend();
+    emit sendCmd();
 }
 
 void POP::list(int mailIndex)
@@ -73,7 +77,7 @@ void POP::list(int mailIndex)
     }
     PCommend cmd(POP::LIST,para);
     this->POPCMDList.append(cmd);
-    slotSend();
+    emit sendCmd();
 }
 
 void POP::stat()
@@ -81,7 +85,7 @@ void POP::stat()
     QList<QByteArray> para;
     PCommend cmd(POP::STAT,para);
     this->POPCMDList.append(cmd);
-    slotSend();
+    emit sendCmd();
 }
 
 void POP::retr(int mailIndex)
@@ -90,7 +94,7 @@ void POP::retr(int mailIndex)
     para.append(QByteArray::number(mailIndex));
     PCommend cmd(POP::RETR,para);
     this->POPCMDList.append(cmd);
-    slotSend();
+    emit sendCmd();
 }
 
 void POP::dele(int mailIndex)
@@ -99,7 +103,7 @@ void POP::dele(int mailIndex)
     para.append(QByteArray::number(mailIndex));
     PCommend cmd(POP::DELE,para);
     this->POPCMDList.append(cmd);
-    slotSend();
+    emit sendCmd();
 }
 
 void POP::uidl(int mailIndex)
@@ -108,7 +112,7 @@ void POP::uidl(int mailIndex)
     para.append(QByteArray::number(mailIndex));
     PCommend cmd(POP::UIDL,para);
     this->POPCMDList.append(cmd);
-    slotSend();
+    emit sendCmd();
 }
 
 void POP::rest()
@@ -116,7 +120,7 @@ void POP::rest()
     QList<QByteArray> para;
     PCommend cmd(POP::REST,para);
     this->POPCMDList.append(cmd);
-    slotSend();
+    emit sendCmd();
 }
 
 void POP::top(int mailIndex, int lines)
@@ -126,7 +130,7 @@ void POP::top(int mailIndex, int lines)
     para.append(QByteArray::number(lines));
     PCommend cmd(POP::TOP,para);
     this->POPCMDList.append(cmd);
-    slotSend();
+    emit sendCmd();
 }
 
 void POP::noop()
@@ -134,7 +138,7 @@ void POP::noop()
     QList<QByteArray> para;
     PCommend cmd(POP::NOOP,para);
     this->POPCMDList.append(cmd);
-    slotSend();
+    emit sendCmd();
 }
 
 void POP::quit()
@@ -142,14 +146,14 @@ void POP::quit()
     QList<QByteArray> para;
     PCommend cmd(POP::QUIT,para);
     this->POPCMDList.append(cmd);
-    slotSend();
+    emit sendCmd();
 }
 
 void POP::slotSend()
 {
-    if(!this->isConnected || this->processing)
+    if(this->processing)
     {
-        //尚未连接到服务器或者正在处理命令,直接返回
+        //正在处理命令,直接返回
         return;
     }
     if(this->POPCMDList.isEmpty())
@@ -159,8 +163,28 @@ void POP::slotSend()
     }
     this->processing = true;
     this->curCmd = this->POPCMDList.first();
-        this->POPCMDList.pop_front();
-    POPWrite(this->curCmd.cmdContent);
+    this->POPCMDList.pop_front();
+    if(curCmd.cmdType == POPCMD::CONNECT)
+    {
+        this->tcpSocket->connectToHost(this->popAddr,this->port);
+    }
+    else
+    {
+        QByteArray sendBlock;
+        sendBlock.append(this->curCmd.cmdContent);
+        sendBlock.append("\r\n");
+        if(isDebugMode)
+        {
+            qDebug()<<sendBlock<<endl;
+        }
+        qint64 byteNum = this->tcpSocket->write(sendBlock);
+        if(!byteNum)
+        {
+            this->errorString = "can't write tcp";
+            this->POPCMDList.clear();
+            emit error(POPError::TCPError);
+        }
+    }
 }
 
 void POP::slotReceive()
@@ -168,7 +192,7 @@ void POP::slotReceive()
     QByteArray receive = this->tcpSocket->readAll();
     this->receiveBuf.append(receive);
     QByteArray endFlag;
-    if(curCmd.cmdType <= POP::RETR)
+    if(curCmd.cmdType < POP::RETR)
     {
         //返回值以回车结尾的命令
         endFlag = "\r\n";
@@ -191,11 +215,13 @@ void POP::slotReceive()
     if(!this->receiveBuf.startsWith(REQ_OK))
     {
         //返回值错误
-        //TODO编写pop协议错误处理函数
+        this->errorString = this->returnValue;
+        this->POPCMDList.clear();
+        emit error(POPError::RetError);
     }
     //修饰服务器返回值
     this->returnValue = this->receiveBuf;
-    if(curCmd.cmdType <= POP::RETR)
+    if(curCmd.cmdType < POP::RETR)
     {
         //返回值以回车结尾的命令
         this->returnValue.remove(0,4);
@@ -207,13 +233,12 @@ void POP::slotReceive()
         this->returnValue.remove(0,returnValue.indexOf("\r\n") + 2);
         this->returnValue.remove(this->returnValue.size()-3,3);
     }
-    emit cmdFinish(this->curCmd.cmdType,this->returnValue);
     switch (this->curCmd.cmdType) {
     case TOP:
         emit topFinish(this->curCmd.cmdParaList.at(0).toInt(),this->returnValue);
         break;
     case UIDL:
-        emit uidlFinish(this->curCmd.cmdParaList.at(0).toInt(),this->returnValue);
+        emit uidlFinish(this->returnValue.split(' ').at(0).toUInt(),this->returnValue.split(' ').at(1));
         break;
     case RETR:
         emit retrFinish(this->curCmd.cmdParaList.at(0).toInt(),this->returnValue);
@@ -228,35 +253,22 @@ void POP::slotReceive()
     }
     this->receiveBuf.clear();
     this->processing = false;
-    slotSend();
+    emit sendCmd();
 }
 
 void POP::slotConnedted()
 {
     if(isDebugMode)
-        qDebug()<<"connected"<<endl;
+        qDebug()<<"connected to pop"<<endl;
     this->isConnected = true;
-    emit connected();
-    slotSend();
 }
 
 void POP::slotError()
 {
-    qDebug()<<this->tcpSocket->errorString()<<endl;
+    this->POPCMDList.clear();
+    this->errorString = this->tcpSocket->errorString();
     this->isConnected = false;
-}
-
-bool POP::POPWrite(const QByteArray block)
-{
-    QByteArray sendBlock;
-    sendBlock.append(block);
-    sendBlock.append("\r\n");
-    if(isDebugMode)
-    {
-        qDebug()<<sendBlock<<endl;
-    }
-    this->tcpSocket->write(sendBlock);
-    return true;
+    emit error(POPError::TCPError);
 }
 
 QByteArray POP::POPCMDConvert(int type)

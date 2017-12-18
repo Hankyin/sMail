@@ -3,180 +3,184 @@
 SMTP::SMTP(QObject *parent)
     : QObject(parent)
 {
-    debugMode = false;
-    connect(&tcpSocket,SIGNAL(error(QAbstractSocket::SocketError)),this,SIGNAL(error()));
+    connect(this,SIGNAL(sendCmd()),this,SLOT(slotSend()));
+    connect(&tcpSocket,SIGNAL(error(QAbstractSocket::SocketError)),this,SLOT(slotError()));
+    connect(&tcpSocket,SIGNAL(connected()),this,SLOT(slotConnedted()));
+    connect(&tcpSocket,SIGNAL(readyRead()),this,SLOT(slotReceive()));
 }
 
-//如果Debug模式开启，则向控制台输出与服务器之间交互的全部信息。
-void SMTP::setDebugMode(bool debug)
+void SMTP::setServerAddr(const QString &smtpServer, int port, bool ssl)
 {
-    this->debugMode = debug;
+    this->smtpServer = smtpServer;
+    this->port = port;
+    this->ssl = ssl;
 }
 
-bool SMTP::connectServer(const QString &smtpServer, int port, bool ssl)
+void SMTP::setLoginInfo(const QString &userName, const QString &passwd)
 {
-    bool ok = false;
-    tcpSocket.connectToHost(smtpServer,port);
-    ok = tcpSocket.waitForConnected();
-    if(!ok)
-    {
-        qDebug()<<"connect error"<<endl;
-        return false;
-    }
-    int retCode = SMTPRead();
-    if(retCode != SERVICE_READY)
-    {
-       qDebug()<<"service open error"<<endl;
-       return false;
-    }
-    return true;
+    this->uName = userName.toUtf8();
+    this->uPass = passwd.toUtf8();
 }
 
-bool SMTP::login(const QString &username,const QString &password)
+void SMTP::sendMail(const QList<QString> receiveList, const QByteArray &mail)
 {
-    int retCode = 0;
-    SMTPWrite("helo localhost");
-    retCode = SMTPRead();
-    if(retCode != REQUEST_OK)
+    this->SMTPCMDList.append(SCommend(SMTPCMD::CONNECT,SMTPRetCode::ServiceReady,"connect"));
+    this->SMTPCMDList.append(SCommend(SMTPCMD::HELO,SMTPRetCode::ReqCompleted,"localhost"));
+    this->SMTPCMDList.append(SCommend(SMTPCMD::AUTH_LOGIN,SMTPRetCode::InputLine));
+    this->SMTPCMDList.append(SCommend(SMTPCMD::_USERNAME,SMTPRetCode::InputLine,this->uName.toBase64()));
+    this->SMTPCMDList.append(SCommend(SMTPCMD::_PASSWORD,SMTPRetCode::AuthThrough,this->uPass.toBase64()));
+    for(auto u : receiveList)
     {
-        qDebug()<<"helo error"<<endl;
-        return false;
+        this->SMTPCMDList.append(SCommend(SMTPCMD::MAIL_FROM,SMTPRetCode::ReqCompleted,this->uName));
+        this->SMTPCMDList.append(SCommend(SMTPCMD::RCPT_TO,SMTPRetCode::ReqCompleted,u.toUtf8()));
+        this->SMTPCMDList.append(SCommend(SMTPCMD::DATA,SMTPRetCode::InputMulti));
+        QByteArray m = mail + "\r\n.";
+        this->SMTPCMDList.append(SCommend(SMTPCMD::_MAIL,SMTPRetCode::ReqCompleted,m));
     }
-    retCode = 0;
-    SMTPWrite("auth login");
-    retCode = SMTPRead();
-    if(retCode != WAIT_INPUT)
-    {
-        qDebug()<<"input error"<<endl;
-        return false;
-    }
-    retCode = 0;
-    SMTPWrite(username.toUtf8().toBase64());
-    retCode = SMTPRead();
-    if(retCode != WAIT_INPUT)
-    {
-        qDebug()<<"input error"<<endl;
-        return false;
-    }
-    retCode = 0;
-    SMTPWrite(password.toUtf8().toBase64());
-    retCode = SMTPRead();
-    if(retCode != LOGIN_SUCCESS)
-    {
-        qDebug()<<"login error"<<endl;
-        return false;
-    }
-    return true;
+    this->SMTPCMDList.append(SCommend(SMTPCMD::QUIT,SMTPRetCode::ServiceClose));
+    emit sendCmd();
 }
 
-bool SMTP::sendMail(const QString &sender, const QStringList &receivers, const QByteArray &msg)
+QByteArray SMTP::SMTPCMDConvert(int type)
 {
-    QByteArray block;
-    int retCode = 0;
-
-    //注意添加< >
-    block.append("mail from: <");
-    block.append(sender.toUtf8());
-    block.append(">");
-    SMTPWrite(block);
-    retCode = SMTPRead();
-    if(retCode != REQUEST_OK)
+    QByteArray retByteArray;
+    switch(type)
     {
-        qDebug()<<"send mail error 1"<<endl;
-        return false;
+    case HELO:
+        retByteArray = "HELO ";
+        break;
+    case AUTH_LOGIN:
+        retByteArray = "AUTH LOGIN ";
+        break;
+    case _USERNAME:
+        break;
+    case _PASSWORD:
+        break;
+    case MAIL_FROM:
+        retByteArray = "MAIL FROM: ";
+        break;
+    case RCPT_TO:
+        retByteArray = "RCPT TO: ";
+        break;
+    case DATA:
+        retByteArray = "DATA";
+        break;
+    case _MAIL:
+        break;
+    case QUIT:
+        retByteArray = "QUIT";
+        break;
+    default:
+        break;
     }
-    block.clear();
-    retCode = 0;
-
-    block.append("rcpt to: ");
-    for(auto re : receivers)
-    {
-        block.append("<");
-        block.append(re + "> ");//每个接受者后面都加一个空格
-    }
-    SMTPWrite(block);
-    retCode = SMTPRead();
-    if(retCode != REQUEST_OK)
-    {
-        qDebug()<<"send mail error 2"<<endl;
-        return false;
-    }
-    block.clear();
-    retCode = 0;
-
-    block.append("data");
-    SMTPWrite(block);
-    retCode = SMTPRead();
-    if(retCode != START_MAIL_INPUT)
-    {
-        qDebug()<<"send mail error 3"<<endl;
-        return false;
-    }
-    block.clear();
-    retCode = 0;
-
-    block = msg;
-    SMTPWrite(msg);
-    SMTPWrite(".");//发送正文结束标志
-    retCode = SMTPRead();
-    if(retCode != REQUEST_OK)
-    {
-        qDebug()<<"send mail error 4"<<endl;
-        return false;
-    }
-    return true;
+    return retByteArray;
 }
 
-bool SMTP::quit()
+void SMTP::slotSend()
 {
-    SMTPWrite("quit");
-    int retCode = SMTPRead();
-    if(retCode != SERVICE_CLOSE)
+    if(isProcessing)
     {
-       qDebug()<<"server close error"<<endl;
-       return false;
+        return;
     }
-    return true;
+    if(this->SMTPCMDList.isEmpty())
+    {
+        emit down(false);
+        return;
+    }
+    this->isProcessing = true;
+    this->curCMD = this->SMTPCMDList.at(0);
+    this->SMTPCMDList.pop_front();
+    QByteArray sendBlock;
+    sendBlock.append(this->curCMD.cmdContent);
+    sendBlock.append("\r\n");
+    if(this->debugMode)
+    {
+        qDebug()<<sendBlock<<endl;
+    }
+    if(curCMD.cmdType == SMTPCMD::CONNECT)
+    {
+        this->tcpSocket.connectToHost(this->smtpServer,this->port);
+    }
+    else
+    {
+        qint64 byteNum = tcpSocket.write(sendBlock);
+        if(!byteNum)
+        {
+            this->errorString = "can't write tcp";
+            this->SMTPCMDList.clear();
+            this->receiveBuf.clear();
+            emit error(SMTPError::TCPError);
+        }
+    }
 }
 
-QString SMTP::errorInfo() const
+void SMTP::slotReceive()
 {
-    return tcpSocket.errorString();
-}
-
-
-int SMTP::SMTPRead()
-{
-    bool ok = false;
-    QByteArray block;
-    ok = tcpSocket.waitForReadyRead();
-    if(!ok)
+    QByteArray buf = tcpSocket.readAll();
+    this->receiveBuf.append(buf);
+    if(!receiveBuf.endsWith("\r\n"))
     {
-        qDebug()<<"read error"<<endl;
-        return -1;
+        //不以回车换行结尾的说明没接受完毕
+        return;
     }
-    block.resize(tcpSocket.bytesAvailable());
-    tcpSocket.read(block.data(),block.size());
     if(debugMode)
     {
-        qDebug()<<block<<endl;
+        qDebug()<<this->receiveBuf<<endl;
     }
-    int retCode = block.left(3).toInt(&ok);
-    if(!ok)
+    bool ok = false;
+    uint retCode = receiveBuf.left(3).toUInt(&ok);
+    if(!ok || retCode != curCMD.cmdRightReturnCode)
     {
-        qDebug()<<"return code read error"<<endl;
-        return -1;
+        //发信错误，注意群发邮件时的处理
+        this->errorString = receiveBuf;
+        emit error(SMTPError::RetCodeError);
+        if(curCMD.cmdType != SMTPCMD::_MAIL)
+        {
+            this->SMTPCMDList.clear();
+            this->receiveBuf.clear();
+            return;
+        }
     }
-    return retCode;
+    this->receiveBuf.clear();
+    this->isProcessing = false;
+    emit sendCmd();
 }
 
-void SMTP::SMTPWrite(const QByteArray block)
+void SMTP::slotConnedted()
 {
-    QByteArray sendData = block + "\r\n";
     if(debugMode)
     {
-        qDebug()<<sendData<<endl;
+        qDebug()<<"connected to smtp"<<endl;
     }
-    tcpSocket.write(sendData);
+    this->isConnected = true;
+    emit sendCmd();
 }
 
+void SMTP::slotError()
+{
+    this->isConnected = false;
+    this->SMTPCMDList.clear();
+    this->receiveBuf.clear();
+    this->errorString = tcpSocket.errorString();
+    emit error(SMTPError::TCPError);
+}
+
+SCommend::SCommend(uint cmd, uint retCode, QByteArray para)
+{
+    this->cmdType = cmd;
+    this->cmdRightReturnCode = retCode;
+    this->cmdContent.append(SMTP::SMTPCMDConvert(cmd));
+    if(cmd == SMTP::MAIL_FROM || cmd == SMTP::RCPT_TO)
+    {
+        QByteArray p;
+        p.append('<');
+        p.append(para);
+        p.append('>');
+        this->cmdContent.append(p);
+    }
+    else
+    {
+        this->cmdContent.append(para);
+    }
+
+}

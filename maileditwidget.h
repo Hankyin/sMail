@@ -6,6 +6,7 @@
 #include <QList>
 #include "mime.h"
 #include "mainwindow.h"
+#include "smtp.h"
 
 namespace Ui {
 class MailEditWidget;
@@ -23,10 +24,12 @@ private slots:
     void slotSend();
     void slotAddAttachment();
     void slotInsert();
+    void slotSendMailDown(bool err);
 private:
     Ui::MailEditWidget *ui;
     QList<MIME*> attachmentList;
     UserInfo *userInfo;
+    SMTP smtp;
 };
 
 #endif // MAILEDITWIDGET_H

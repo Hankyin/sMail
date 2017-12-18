@@ -1,0 +1,19 @@
+QListWidget {
+        border: 1px solid rgb(111, 156, 207);
+        background: rgb(224, 238, 255);
+        gridline-color: rgb(111, 156, 207);
+}
+QListWidget::item {
+        padding-left: 5px;
+        padding-right: 5px;
+        border: none;
+        background: white;
+        border-right: 1px solid rgb(111, 156, 207);
+        border-bottom: 1px solid rgb(111, 156, 207);
+}
+QListWidget::item:selected {
+        background: rgba(255, 255, 255, 100);
+}
+QListWidget::item:selected:!active {
+        color: rgb(65, 65, 65);
+}

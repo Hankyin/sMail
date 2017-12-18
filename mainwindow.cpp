@@ -4,6 +4,7 @@
 #include <QDebug>
 #include <QDateTime>
 #include <QDesktopServices>
+#include <QDir>
 #include <QHBoxLayout>
 #include <QFile>
 #include <QFileDialog>
@@ -120,14 +121,15 @@ void MainWindow::slotReadMail(QListWidgetItem *item)
     //先从本地读取，找不到再从网上下载
     UserInfo *u = this->userInfoList.at(0);
     QString uid = item->data(Qt::UserRole).toString();
-    //filename = sMailRepertory/yin/aeidssev+de.eml
-    QString fileName = "sMailRepertory/" + u->userName +"/" + uid + ".eml";
-    QFile file(fileName);
+    //filename = ~/.sMailRepertory/loufand@163.com/aeidssev+de.eml
+    QString filePath = "sMailRepertory/" + u->userMailAddr+ "/" + uid + ".eml";
+    QFile file(filePath);
     if(file.exists() && file.open(QIODevice::ReadOnly))
     {
         QByteArray mail = file.readAll();
         MailPraser praser(mail);
         ui->webView->setHtml(praser.getHtml());
+        file.close();
     }
     else
     {
@@ -151,12 +153,14 @@ void MainWindow::slotRetr(int mailId, QByteArray mail)
     ui->webView->setHtml(praser.getHtml());
     UserInfo *u = this->userInfoList.at(0);
     QSqlQuery query(this->db);
-    query.exec(QString("select uid from inBox%1 where id == %2;").arg(QString(u->id),QString::number(mailId)));
+    query.exec(QString("select uid from inBox%1 where id == %2;").arg(QString::number(u->id),QString::number(mailId)));
     while (query.next())
     {
         QString uid = query.value(0).toString();
-        QString fileName = "sMailRepertory/" + u->userName +"/" + uid + ".eml";
-        QFile file(fileName);
+        QString filePath = "sMailRepertory/" + u->userMailAddr + "/";
+        QDir dir;
+        dir.mkpath(filePath);
+        QFile file(filePath + uid + ".eml");
         file.open(QIODevice::WriteOnly);
         file.write(mail);
         file.close();
@@ -324,8 +328,6 @@ bool MainWindow::createUser()
 
 void MainWindow::popLogin()
 {
-
-    qDebug()<< " enter"<<pop.getConnectionStatu()<<endl;
     if(!pop.getConnectionStatu())
     {
         qDebug()<<"login"<<endl;
