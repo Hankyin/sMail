@@ -125,6 +125,7 @@ private:
     void mixPraser(QByteArray msg, QByteArray boundary);
     void relatedPraser(QByteArray msg,QByteArray boundary);
     void alternativePraser(QByteArray msg, QByteArray boundary);
+    void textPraser(QByteArray txt, QMap<QByteArray, QByteArray> &headMap);
     void cutHeadAndContent(QByteArray msg,QByteArray &msgHead,QByteArray &msgContent);
     void cutMultipart(QByteArray msg, QByteArray boundary, QList<QByteArray> &subMsgList);
     QString from;

@@ -296,7 +296,6 @@ MailPraser::MailPraser(QByteArray mail)
     }
     else if(mType == "multipart/alternative")
     {
-
         alternativePraser(content,headMap.value("boundary"));
     }
     else//其他情况以ascii码对待
@@ -364,13 +363,21 @@ void MailPraser::mixPraser(QByteArray msg, QByteArray boundary)
         QByteArray head,content;
         cutHeadAndContent(subMsgList.at(i),head,content);
         QMap<QByteArray,QByteArray> headMap = headPraser(head);
-        if(headMap.value("content-type") == "multipart/alternative")
+        if(headMap.value("content-type") == "multipart/mixed")
+        {
+            mixPraser(content,headMap.value("boundary"));
+        }
+        else if(headMap.value("content-type") == "multipart/alternative")
         {
             alternativePraser(content,headMap.value("boundary"));
         }
         else if(headMap.value("content-type") == "multipart/related")
         {
             relatedPraser(content,headMap.value("boundary"));
+        }
+        else if(headMap.value("content-type").startsWith("text"))
+        {
+            textPraser(content,headMap);
         }
         else
         {
@@ -389,9 +396,17 @@ void MailPraser::relatedPraser(QByteArray msg, QByteArray boundary)
         QByteArray head,content;
         cutHeadAndContent(subMsgList.at(i),head,content);
         QMap<QByteArray,QByteArray> headMap = headPraser(head);
-        if(headMap.value("content-type") == "multipart/alternative")
+        if(headMap.value("content-type") == "multipart/related")
+        {
+            relatedPraser(content,headMap.value("boundary"));
+        }
+        else if(headMap.value("content-type") == "multipart/alternative")
         {
             alternativePraser(content,headMap.value("boundary"));
+        }
+        else if(headMap.value("content-type").startsWith("text"))
+        {
+            textPraser(content,headMap);
         }
         else
         {
@@ -406,36 +421,49 @@ void MailPraser::alternativePraser(QByteArray msg, QByteArray boundary)
     cutMultipart(msg,boundary,subMsgList);
     for(int i = 0;i < subMsgList.size();i++)
     {
-        QByteArray head,content,rawContent;
-        cutHeadAndContent(subMsgList.at(i),head,rawContent);
+        QByteArray head,content;
+        cutHeadAndContent(subMsgList.at(i),head,content);
         QMap<QByteArray,QByteArray> headMap = headPraser(head);
-        if(headMap.value("content-transfer-encoding") == "quoted-printable")
+        if(headMap.value("content-type") == "multipart/alternative")
         {
-            content = MIME::Quoted_printableDecoder(rawContent);
+            alternativePraser(content,headMap.value("boundary"));
         }
-        else if(headMap.value("content-transfer-encoding") == "base64")
+        else if(headMap.value("content-type").startsWith("text"))
         {
-            content = QByteArray::fromBase64(rawContent);
+            textPraser(content,headMap);
         }
-        else
-        {
-            content = rawContent;
-        }
+    }
+}
 
-        if(headMap.value("content-type") == "text/plain")
-        {
-            QTextCodec *codec = QTextCodec::codecForName(headMap.value("charset"));
-            if(codec == nullptr)
-                this->plain = content;
-            this->plain = codec->toUnicode(content);
-        }
-        else if(headMap.value("content-type") == "text/html")
-        {
-            QTextCodec *codec = QTextCodec::codecForName(headMap.value("charset"));
-            if(codec == nullptr)
-                this->html = content;
-            this->html = codec->toUnicode(content);
-        }
+void MailPraser::textPraser(QByteArray txt, QMap<QByteArray,QByteArray> &headMap)
+{
+    QByteArray content;
+    if(headMap.value("content-transfer-encoding") == "quoted-printable")
+    {
+        content = MIME::Quoted_printableDecoder(txt);
+    }
+    else if(headMap.value("content-transfer-encoding") == "base64")
+    {
+        content = QByteArray::fromBase64(txt);
+    }
+    else
+    {
+        content = txt;
+    }
+
+    if(headMap.value("content-type") == "text/plain")
+    {
+        QTextCodec *codec = QTextCodec::codecForName(headMap.value("charset"));
+        if(codec == nullptr)
+            this->plain = content;
+        this->plain = codec->toUnicode(content);
+    }
+    else if(headMap.value("content-type") == "text/html")
+    {
+        QTextCodec *codec = QTextCodec::codecForName(headMap.value("charset"));
+        if(codec == nullptr)
+            this->html = content;
+        this->html = codec->toUnicode(content);
     }
 }
 

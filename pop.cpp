@@ -90,6 +90,8 @@ void POP::stat()
 
 void POP::retr(int mailIndex)
 {
+    if(mailIndex < 1)
+        return;
     QList<QByteArray> para;
     para.append(QByteArray::number(mailIndex));
     PCommend cmd(POP::RETR,para);
@@ -156,33 +158,50 @@ void POP::slotSend()
         //正在处理命令,直接返回
         return;
     }
-    if(this->POPCMDList.isEmpty())
-    {
-        emit down(false);
-        return;
-    }
     this->processing = true;
-    this->curCmd = this->POPCMDList.first();
-    this->POPCMDList.pop_front();
-    if(curCmd.cmdType == POPCMD::CONNECT)
+    bool hasSendCmd = false;
+    while(!hasSendCmd)
     {
-        this->tcpSocket->connectToHost(this->popAddr,this->port);
-    }
-    else
-    {
-        QByteArray sendBlock;
-        sendBlock.append(this->curCmd.cmdContent);
-        sendBlock.append("\r\n");
-        if(isDebugMode)
+        if(this->POPCMDList.isEmpty())
         {
-            qDebug()<<sendBlock<<endl;
+            this->processing = false;
+            emit down(false);
+            return;
         }
-        qint64 byteNum = this->tcpSocket->write(sendBlock);
-        if(!byteNum)
+        this->curCmd = this->POPCMDList.first();
+        this->POPCMDList.pop_front();
+        if(curState == POPState::Offline)
         {
-            this->errorString = "can't write tcp";
-            this->POPCMDList.clear();
-            emit error(POPError::TCPError);
+            //离线状态下可以执行的命令
+            int cmd = this->curCmd.cmdType;
+            if(cmd == POPCMD::CONNECT)
+            {
+                if(this->tcpSocket->state() == QAbstractSocket::UnconnectedState)
+                {
+                    this->tcpSocket->connectToHost(this->popAddr,this->port);
+                    hasSendCmd = true;
+                }
+            }
+        }
+        else if(curState == POPState::Connected)
+        {
+            //连接状态下可以执行的命令
+            int cmd = this->curCmd.cmdType;
+            if(cmd == POPCMD::USER || cmd == POPCMD::PASS)
+            {
+                POPWrite(curCmd.cmdContent);
+                hasSendCmd = true;
+            }
+        }
+        else
+        {
+            //登录状态下可以执行的命令
+            int cmd = this->curCmd.cmdType;
+            if(cmd != POPCMD::CONNECT && cmd != POPCMD::USER && cmd != POPCMD::PASS)
+            {
+                POPWrite(curCmd.cmdContent);
+                hasSendCmd = true;
+            }
         }
     }
 }
@@ -238,16 +257,28 @@ void POP::slotReceive()
         emit topFinish(this->curCmd.cmdParaList.at(0).toInt(),this->returnValue);
         break;
     case UIDL:
-        emit uidlFinish(this->returnValue.split(' ').at(0).toUInt(),this->returnValue.split(' ').at(1));
+    {
+        uint index = this->returnValue.left(returnValue.indexOf(' ')).toUInt();
+        QByteArray uid = this->returnValue.right(returnValue.size() - returnValue.indexOf(' ') - 1);
+        emit uidlFinish(index,uid);
         break;
+    }
     case RETR:
         emit retrFinish(this->curCmd.cmdParaList.at(0).toInt(),this->returnValue);
         break;
     case STAT:
-        emit statFinish(this->returnValue.split(' ').at(0).toUInt(),this->returnValue.split(' ').at(1).toLong());
+    {
+        uint index = this->returnValue.left(returnValue.indexOf(' ')).toUInt();
+        qint64 totalSize = this->returnValue.right(returnValue.size() - returnValue.indexOf(' ') - 1).toLong();
+        emit statFinish(index,totalSize);
+        break;
+    }
+    case PASS:
+        this->curState = POPState::Logged;
         break;
     case QUIT:
-        this->isConnected = false;
+        this->curState = POPState::Offline;
+        break;
     default:
         break;
     }
@@ -260,15 +291,38 @@ void POP::slotConnedted()
 {
     if(isDebugMode)
         qDebug()<<"connected to pop"<<endl;
-    this->isConnected = true;
+    this->curState = POPState::Connected;
 }
 
 void POP::slotError()
 {
+    if(this->curState == POPState::Offline)
+    {
+        //离线状态不报错
+        return;
+    }
     this->POPCMDList.clear();
     this->errorString = this->tcpSocket->errorString();
-    this->isConnected = false;
+    this->curState = Offline;
     emit error(POPError::TCPError);
+}
+
+void POP::POPWrite(QByteArray block)
+{
+    QByteArray sendBlock;
+    sendBlock.append(block);
+    sendBlock.append("\r\n");
+    if(isDebugMode)
+    {
+        qDebug()<<sendBlock<<endl;
+    }
+    qint64 byteNum = this->tcpSocket->write(sendBlock);
+    if(!byteNum)
+    {
+        this->errorString = "can't write tcp";
+        this->POPCMDList.clear();
+        emit error(POPError::TCPError);
+    }
 }
 
 QByteArray POP::POPCMDConvert(int type)

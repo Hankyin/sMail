@@ -2,4 +2,9 @@
     <qresource prefix="/theme">
         <file>write.qss</file>
     </qresource>
+    <qresource prefix="/picture">
+        <file>close.png</file>
+        <file>file.png</file>
+        <file>img.png</file>
+    </qresource>
 </RCC>

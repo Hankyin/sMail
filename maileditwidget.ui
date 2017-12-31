@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>675</width>
-    <height>593</height>
+    <width>593</width>
+    <height>643</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -21,11 +21,31 @@
     <widget class="QLineEdit" name="editSubject"/>
    </item>
    <item>
-    <widget class="QTextEdit" name="textEdit"/>
+    <widget class="QScrollArea" name="scrollArea">
+     <property name="widgetResizable">
+      <bool>true</bool>
+     </property>
+     <widget class="QWidget" name="scrollAreaWidgetContents">
+      <property name="geometry">
+       <rect>
+        <x>0</x>
+        <y>0</y>
+        <width>573</width>
+        <height>515</height>
+       </rect>
+      </property>
+     </widget>
+    </widget>
    </item>
    <item>
     <widget class="QWidget" name="cmdBar" native="true">
      <layout class="QHBoxLayout" name="horizontalLayout">
+      <property name="topMargin">
+       <number>0</number>
+      </property>
+      <property name="bottomMargin">
+       <number>0</number>
+      </property>
       <item>
        <widget class="QPushButton" name="btSend">
         <property name="text">
@@ -34,16 +54,23 @@
        </widget>
       </item>
       <item>
-       <widget class="QToolButton" name="btInsert">
+       <widget class="QToolButton" name="btBold">
         <property name="text">
-         <string>插</string>
+         <string>B</string>
         </property>
        </widget>
       </item>
       <item>
-       <widget class="QToolButton" name="toolButton_3">
+       <widget class="QToolButton" name="btItalic">
         <property name="text">
-         <string>表</string>
+         <string>I</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QToolButton" name="btList">
+        <property name="text">
+         <string>列表</string>
         </property>
        </widget>
       </item>

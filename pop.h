@@ -24,7 +24,6 @@ class POP : public QObject
 public:
     enum POPCMD
     {
-        NOCMD,
         CONNECT,
         USER,
         PASS,
@@ -44,6 +43,12 @@ public:
         TCPError,
         RetError,
     };
+    enum POPState
+    {
+        Offline,
+        Connected,
+        Logged,
+    };
 
     explicit POP(QObject *parent = nullptr);
     ~POP();
@@ -60,7 +65,6 @@ public:
     void top(int mailIndex,int lines);
     void noop();
     void quit();
-    bool getConnectionStatu() {return this->isConnected;}
     QString& getErrorString(){return errorString;}
     const QByteArray REQ_OK = "+OK";
 
@@ -70,6 +74,7 @@ signals:
     void down(bool err);
     //这个地方传引用可能导致问题，如果用引用，传出的retValue就是这个对象的returnValue，
     //假设网速很快或其他原因，外部对象还没有处理这个信号发出的retValue，returnValue就被新的返回值覆盖，这样就会出错。
+    //是这样么
     void topFinish(int mailId,QByteArray head);
     void uidlFinish(int mailId,QByteArray uid);
     void retrFinish(int mailId,QByteArray mail);
@@ -84,15 +89,16 @@ private:
     QTcpSocket *tcpSocket;
     bool isDebugMode = false;
     bool processing = false;
-    bool isConnected = false;
     QString popAddr;
     uint port;
     bool ssl;
     QList<PCommend> POPCMDList;
     PCommend curCmd;
+    int curState = Offline;
     QByteArray receiveBuf;
     QByteArray returnValue;
     QString errorString;
+    void POPWrite(QByteArray block);
 
 };
 

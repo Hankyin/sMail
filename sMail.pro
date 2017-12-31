@@ -30,7 +30,11 @@ SOURCES += \
     pop.cpp \
     mime.cpp \
     maileditwidget.cpp \
-    logindialog.cpp
+    logindialog.cpp \
+    attachmentwidget.cpp \
+    smaildb.cpp \
+    user.cpp \
+    mailmodel.cpp
 
 HEADERS += \
         mainwindow.h \
@@ -38,7 +42,11 @@ HEADERS += \
     pop.h \
     mime.h \
     maileditwidget.h \
-    logindialog.h
+    logindialog.h \
+    attachmentwidget.h \
+    smaildb.h \
+    user.h \
+    mailmodel.h
 
 FORMS += \
         mainwindow.ui \

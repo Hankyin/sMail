@@ -1,6 +1,8 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
+#include "user.h"
+#include "smaildb.h"
 #include <QMainWindow>
 #include <QByteArray>
 #include <QSqlDatabase>
@@ -10,10 +12,7 @@
 #include <QListWidgetItem>
 #include <QTcpSocket>
 #include <QUrl>
-#include "smtp.h"
-#include "mime.h"
-#include "pop.h"
-#include "logindialog.h"
+#include <QModelIndex>
 
 namespace Ui {
 class MainWindow;
@@ -31,24 +30,15 @@ signals:
     void getMailHead(QByteArray &head);
 private slots:
     void slotWriteMail();
-    void slotRefreshStart();
-    void slotRefreshStat(uint mailCount);
-    void slotRefreshTop(int mailId, QByteArray head);
-    void slotRefreshUidl(int mailId,QByteArray uid);
-    void slotReadMail(QListWidgetItem *item);
-    void slotRetr(int mailId,QByteArray mail);
+    void slotChangeDir(QModelIndex index);
+    void slotReadMail(QModelIndex index);
+    void slotRefreshMail();
     void slotAfterShow();
-    void slotOpenExternalLink(const QUrl &url);
-    void slotPOPDown(bool err);
 private:
     Ui::MainWindow *ui;
-    QList<UserInfo*> userInfoList;
-    POP pop;
-//    SMTP smtp;
-    QSqlDatabase db;
-    bool createUser();
-    void popLogin();
-    void updateListWidget(UserInfo &u);
+    QList<User*> userList;
+    User *curUser;
+    sMailDB *db;
 };
 
 

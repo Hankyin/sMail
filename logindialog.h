@@ -1,34 +1,14 @@
 #ifndef LOGINDIALOG_H
 #define LOGINDIALOG_H
 
+#include "user.h"
 #include <QDialog>
-
-class UserInfo
-{
-public:
-    UserInfo() {id = 0;}//id 为0说明是新建的用户，数据库中读取的用户id从1开始
-    //当前登录用户信息
-    uint id;
-    QString userName;
-    QString userMailAddr;
-    QString userMailPasswd;
-    QString SMTPServerAddr;
-    QString SMTPAccount;
-    QString SMTPPasswd;
-    int SMTPPort = 25;
-    bool SMTPSSL = false;
-    QString POPServerAddr;
-    QString POPAccount;
-    QString POPPasswd;
-    int POPPort;
-    bool POPSSL;
-
-    int mailCount = 0;
-};
 
 namespace Ui {
 class LoginDialog;
 }
+
+class UserInfo;
 
 class LoginDialog : public QDialog
 {

@@ -77,17 +77,14 @@ void LoginDialog::slotCreateAcount()
         QMessageBox::critical(this,"错误","请填写完整信息");
         return;
     }
-    this->newUser.userName = ui->editUserName->text();
-    this->newUser.userMailAddr = ui->editMailAddr->text();
-    this->newUser.userMailPasswd = ui->editMailPasswd->text();
-    this->newUser.SMTPAccount = ui->editSMTPAccount->text();
-    this->newUser.SMTPServerAddr = ui->editSMTPServerAddr->text();
-    this->newUser.SMTPPasswd = ui->editSMTPPasswd->text();
+    this->newUser.id = 0;
+    this->newUser.name = ui->editUserName->text();
+    this->newUser.mailAddr = ui->editMailAddr->text();
+    this->newUser.mailPasswd = ui->editMailPasswd->text();
+    this->newUser.SMTPServer = ui->editSMTPServerAddr->text();
     this->newUser.SMTPPort = ui->editSMTPPort->text().toInt();
     this->newUser.SMTPSSL = ui->checkSMTPSSL->isChecked();
-    this->newUser.POPAccount = ui->editPOPAccount->text();
-    this->newUser.POPServerAddr = ui->editPOPServerAddr->text();
-    this->newUser.POPPasswd = ui->editPOPPasswd->text();
+    this->newUser.POPServer = ui->editPOPServerAddr->text();
     this->newUser.POPPort = ui->editPOPPort->text().toInt();
     this->newUser.POPSSL = ui->checkPOPSSL->isChecked();
     connectTest();

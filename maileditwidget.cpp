@@ -1,25 +1,48 @@
 #include "maileditwidget.h"
 #include "ui_maileditwidget.h"
 #include "mime.h"
+#include "user.h"
 #include <QDateTime>
 #include <QFileDialog>
 #include <QFile>
+#include <QDir>
 #include <QMessageBox>
 #include <QDebug>
 #include <QImageReader>
+#include <QVBoxLayout>
+#include <QTextCursor>
+#include <QTextDocument>
+#include <QTextDocumentFragment>
+#include <QCompleter>
+#include <QSqlQueryModel>
 
-MailEditWidget::MailEditWidget(UserInfo *user, QWidget *parent) :
+MailEditWidget::MailEditWidget(User *user, QWidget *parent) :
     QWidget(parent),
     ui(new Ui::MailEditWidget)
 {
-    this->userInfo = user;
     ui->setupUi(this);
+    this->user = user;
+    this->smtp = user->getSMTP();
     ui->editTo->setPlaceholderText("收件人");
+    QCompleter *completer = new QCompleter;
+    completer->setCompletionMode(QCompleter::PopupCompletion);
+
     ui->editSubject->setPlaceholderText("主题");
+    this->mailWidget = new QWidget();
+    QVBoxLayout *layout = new QVBoxLayout(this->mailWidget);
+    this->textEdit = new QTextEdit;
+    this->textEdit->setFrameShape(QFrame::Panel);
+    layout->addWidget(this->textEdit);
+    layout->setMargin(0);
+    ui->scrollArea->setWidget(this->mailWidget);
+    ui->scrollArea->setBackgroundRole(QPalette::Light);
+    ui->scrollArea->setFrameShape(QFrame::Panel);
     connect(ui->btSend,SIGNAL(clicked(bool)),this,SLOT(slotSend()));
     connect(ui->btAttachment,SIGNAL(clicked(bool)),this,SLOT(slotAddAttachment()));
-    connect(ui->btInsert,SIGNAL(clicked(bool)),this,SLOT(slotInsert()));
-    connect(&smtp,SIGNAL(down(bool)),this,SLOT(slotSendMailDown(bool)));
+    connect(ui->btBold,SIGNAL(clicked(bool)),this,SLOT(slotBold()));
+    connect(ui->btItalic,SIGNAL(clicked(bool)),this,SLOT(slotItalic()));
+    connect(this->smtp,SIGNAL(down(bool)),this,SLOT(slotSendMailDown(bool)));
+    connect(this->textEdit,SIGNAL(textChanged()),this,SLOT(slotResetTextEditHeight()));
 }
 
 MailEditWidget::~MailEditWidget()
@@ -29,10 +52,12 @@ MailEditWidget::~MailEditWidget()
 
 void MailEditWidget::slotSend()
 {
+    if(ui->editTo->text().isEmpty())
+        return;
     ui->btSend->setEnabled(false);
-    QString from = userInfo->userMailAddr;
-    QString mailFrom = from;
-    QString mimeFrom = MIME::HeadEncoding(userInfo->userName.toUtf8(),MIME::UTF8,false) + " <" + from + ">";
+    UserInfo userInfo = this->user->getUserInfo();
+    QString from = userInfo.mailAddr;
+    QString mimeFrom = MIME::HeadEncoding(userInfo.name.toUtf8(),MIME::UTF8,false) + " <" + from + ">";
     QString to = ui->editTo->text();
     QList<QString> rcptTo = to.split(';',QString::SkipEmptyParts);
     QString mimeTo;
@@ -49,8 +74,8 @@ void MailEditWidget::slotSend()
     //这是群发邮件的头
     QString subject = ui->editSubject->text();
     QDateTime date = QDateTime::currentDateTime();
-    QString htmlContent = ui->textEdit->toHtml();
-    QString plainContent = ui->textEdit->toPlainText();
+    QString htmlContent = this->textEdit->toHtml();
+    QString plainContent = this->textEdit->toPlainText();
 
     MIMEMultipart mixed(MIME::multipart_mixed);
     mixed.addHead("From",mimeFrom.toUtf8());
@@ -65,55 +90,138 @@ void MailEditWidget::slotSend()
     alternative.append(msgText);
     mixed.append(alternative);
     //插入附件
-    for(int i = 0;i < this->attachmentList.size();i++)
+    for(auto a : this->attList)
     {
-        mixed.append(*attachmentList.at(i));
+        if(a == nullptr)
+            continue;
+        MIMEImage att(a->getFile(),MIME::image_png,true);
+        mixed.append(att);
+        delete a;
+        a = nullptr;
+    //attacmhentList中存储的是指针，用完后记得删
     }
-    smtp.setDebugMode(true);
-    smtp.setServerAddr(userInfo->SMTPServerAddr,userInfo->SMTPPort,userInfo->SMTPSSL);
-    smtp.setLoginInfo(userInfo->SMTPAccount,userInfo->SMTPPasswd);
-    smtp.sendMail(rcptTo,mixed.getContent());
-    //attacmhentList中存储的是指针，用完后记得删除
-    qDeleteAll(this->attachmentList);
-    this->attachmentList.clear();
+    this->attList.clear();
+    this->mail = mixed.getContent();
+    smtp->setDebugMode(true);
+    smtp->setServerAddr(userInfo.SMTPServer,userInfo.SMTPPort,userInfo.SMTPSSL);
+    smtp->setLoginInfo(userInfo.mailAddr,userInfo.mailPasswd);
+    smtp->sendMail(rcptTo,mail.toUtf8());
 }
 
 void MailEditWidget::slotAddAttachment()
 {
     QString path = QFileDialog::getOpenFileName(this,"添加附件");
-    QFile file(path);
-    if(!file.open(QIODevice::ReadOnly))
+    if(path.isEmpty())
     {
-        QMessageBox::warning(this,"错误","附件打开错误");
         return;
     }
-    MIMEImage *attachment = new MIMEImage(path,MIME::image_jpeg,true);
-    this->attachmentList.append(attachment);//append是深拷贝还是浅拷贝？？
+    int attId = this->attList.size();//attid是为了删除时确定它在layout中的位置
+    AttachmentWidget *att = new AttachmentWidget(path,attId);
+    this->attList.append(att);
+    this->mailWidget->layout()->addWidget(att);
+    connect(att,SIGNAL(remove(int)),this,SLOT(slotRemoveAttachment(int)));
+}
+
+void MailEditWidget::slotRemoveAttachment(int attId)
+{
+    QWidget *widget = this->attList.at(attId);
+    QLayout *layout = this->mailWidget->layout();
+    layout->removeWidget(widget);
+    delete widget;
+    widget = nullptr;
+    this->attList.replace(attId,nullptr);
 }
 
 void MailEditWidget::slotInsert()
 {
-    QString file = QFileDialog::getOpenFileName(this, tr("Select an image"),
-                                  ".", tr("Bitmap Files (*.bmp)\n"
-                                    "JPEG (*.jpg *jpeg)\n"
-                                    "GIF (*.gif)\n"
-                                    "PNG (*.png)\n"));
-    QUrl Uri ( QString ( "file://%1" ).arg ( file ) );
-    QImage image = QImageReader ( file ).read();
+//    QString file = QFileDialog::getOpenFileName(this, tr("Select an image"),
+//                                  ".", tr("Bitmap Files (*.bmp)\n"
+//                                    "JPEG (*.jpg *jpeg)\n"
+//                                    "GIF (*.gif)\n"
+//                                    "PNG (*.png)\n"));
+//    QUrl Uri ( QString ( "file://%1" ).arg ( file ) );
+//    QImage image = QImageReader ( file ).read();
 
-    QTextDocument * textDocument = ui->textEdit->document();
-    textDocument->addResource( QTextDocument::ImageResource, Uri, QVariant ( image ) );
-    QTextCursor cursor = ui->textEdit->textCursor();
-    QTextImageFormat imageFormat;
-    imageFormat.setWidth( image.width() );
-    imageFormat.setHeight( image.height() );
-    imageFormat.setName( Uri.toString() );
-    cursor.insertImage(imageFormat);
+//    QTextDocument * textDocument = ui->textEdit->document();
+//    textDocument->addResource( QTextDocument::ImageResource, Uri, QVariant ( image ) );
+//    QTextCursor cursor = ui->textEdit->textCursor();
+//    QTextImageFormat imageFormat;
+//    imageFormat.setWidth( image.width() );
+//    imageFormat.setHeight( image.height() );
+//    imageFormat.setName( Uri.toString() );
+    //    cursor.insertImage(imageFormat);
+}
+
+void MailEditWidget::slotBold()
+{
+    if(this->textEdit->currentCharFormat().fontWeight() == QFont::Bold)
+    {
+        this->textEdit->setFontWeight(QFont::Normal);
+    }
+    else
+    {
+        this->textEdit->setFontWeight(QFont::Bold);
+    }
+}
+
+void MailEditWidget::slotItalic()
+{
+    if(this->textEdit->currentCharFormat().fontItalic())
+    {
+        this->textEdit->setFontItalic(false);
+    }
+    else
+    {
+        this->textEdit->setFontItalic(true);
+    }
 }
 
 void MailEditWidget::slotSendMailDown(bool err)
 {
     QMessageBox::information(this,"邮件","邮件发送成功");
     ui->btSend->setEnabled(true);
+    emit sendDown();
     this->close();
 }
+
+void MailEditWidget::slotSendMailErr(int error)
+{
+    QString errorType;
+    QString errorContent;
+    switch (error)
+    {
+    case SMTP::RetCodeError:
+        errorType = "返回码错误";
+        break;
+    case SMTP::TCPError:
+        errorType = "网络错误";
+        break;
+    default:
+        break;
+    }
+    QMessageBox::critical(this,errorType,errorContent,QMessageBox::Ok);
+    this->close();
+}
+
+void MailEditWidget::slotResetTextEditHeight()
+{
+    QTextDocument *doc = this->textEdit->document();
+    if(doc)
+    {
+        int docHeight = doc->size().height();
+        this->textEdit->setMinimumHeight(docHeight + 10);
+    }
+}
+
+void MailEditWidget::closeEvent(QCloseEvent *event)
+{
+    bool isSending = ui->btSend->isEnabled() ? false : true;
+    if(isSending)
+    {
+        event->ignore();
+        QMessageBox::information(this,"提示","正在发送邮件，发送成功后该窗口自动关闭");
+    }
+}
+
+
+
