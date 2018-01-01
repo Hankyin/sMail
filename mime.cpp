@@ -2,12 +2,14 @@
 #include <QTime>
 #include <QDebug>
 #include <QFile>
+#include <QDir>
 #include <QTextCodec>
+#include <QFileInfo>
 
 QList<QList<QByteArray>> MIME::MIMETypeList = {{"multipart/mixed", "multipart/related","multipart/alternative"},
                                              {"text/plain","text/html"},
                                              {"image/png","image/jpeg","image/gif","image/bmp"},
-                                             {"application/pdf","application/zip"},
+                                             {"application/pdf","application/zip","application/octet-stream"},
                                              {"audio/mpeg"},
                                              {"video/mpeg"}};
 QList<QByteArray> MIME::TextEncodingList = {"utf-8","gb18030","7bit","8bit"};
@@ -62,6 +64,8 @@ QString MIME::HeadDecoding(QByteArray head)
 {
     QByteArray rawContent;
     QList<QByteArray> splitList = head.split('?');
+    if(splitList.size() < 5)
+        return head;
     //判断head的格式是否正确
     if(!splitList.at(0).endsWith('=') || !splitList.at(4).startsWith('='))
     {
@@ -215,14 +219,7 @@ MIMEImage::MIMEImage(const QString imgPath, int type, bool isAttachment)
         return;
     }
     QByteArray imgByte = imgFile.readAll();
-    QImage img;
-    if(!img.loadFromData(imgByte))
-    {
-        qDebug()<<"mimeimage is not image"<<endl;
-        return;
-    }
-
-    QString imgName = imgPath.section('/',-1,-1,QString::SectionSkipEmpty);//如何确定每个平台的分隔符？
+    QString imgName = imgPath.section('/',-1,-1,QString::SectionSkipEmpty);
     QByteArray attr;
     attr.append("name=\"");
     attr.append(HeadEncoding(imgName.toUtf8(),MIME::UTF8,false));
@@ -248,6 +245,11 @@ MIMEImage::MIMEImage(const QString imgPath, int type, bool isAttachment)
 
 MailPraser::MailPraser(QByteArray mail)
 {
+    praser(mail);
+}
+
+void MailPraser::praser(QByteArray &mail)
+{
     //分割邮件
     QByteArray head;
     QByteArray content,rawContent;
@@ -257,6 +259,16 @@ MailPraser::MailPraser(QByteArray mail)
     QByteArray mType = headMap.value("content-type");
     QByteArray mTEncoding = headMap.value("content-transfer-encoding");//传输编码
     this->from = headMap.value("from");
+    int b = this->from.indexOf('<');
+    this->senderName = MIME::HeadDecoding(from.left(b).toUtf8());
+    this->senderMail = from.mid(b);
+    if(senderMail.startsWith('<') && senderMail.endsWith('>'))
+    {
+        //去掉<>
+        this->senderMail = senderMail.mid(1,senderMail.size()-2);
+    }
+    if(this->senderName.isEmpty())
+        this->senderName = this->senderMail;
     this->to = headMap.value("to");
     this->subject = MIME::HeadDecoding(headMap.value("subject"));
     this->datetime = QDateTime::fromString(headMap.value("date"),Qt::RFC2822Date);
@@ -303,6 +315,16 @@ MailPraser::MailPraser(QByteArray mail)
         this->plain = rawContent;
         this->html = rawContent;
     }
+    if(!this->html.isEmpty())
+    {
+        //转换cid
+        QMap<QString,QString>::const_iterator i = this->cidTOpath.constBegin();
+        while (i != this->cidTOpath.constEnd())
+        {
+            QString cid = QString("cid:") + i.key();
+            this->html.replace(cid,i.value());
+        }
+    }
 }
 
 //头部解析器将解析结果保存在一个QMap中，content—type的属性另外存储
@@ -321,7 +343,7 @@ QMap<QByteArray, QByteArray> MailPraser::headPraser(QByteArray head)
                 int colonIndex = tHead.indexOf(":");
                 QByteArray field = tHead.left(colonIndex).toLower().trimmed();//头部域的名字的每个单词都转换为小写
                 QByteArray value = tHead.right(tHead.size() - colonIndex - 1).trimmed();
-                if(field == "content-type")
+                if(field == "content-type" || field == "content-disposition")
                 {
                     int semicolonIndex = value.indexOf(";");
                     QByteArray val = value.left(semicolonIndex).trimmed();
@@ -329,7 +351,7 @@ QMap<QByteArray, QByteArray> MailPraser::headPraser(QByteArray head)
                     headMap.insert(field,val);
                     int equalIndex = attr.indexOf("=");
                     QByteArray attrType = attr.left(equalIndex).trimmed();
-                    QByteArray attrValue = attr.right(attr.size() - equalIndex -1).trimmed();
+                    QByteArray attrValue = attr.mid(equalIndex + 1,attr.indexOf(';') - equalIndex).trimmed();
                     if(attrValue.startsWith('\"'))
                     {
                         attrValue.remove(0,1);
@@ -382,7 +404,23 @@ void MailPraser::mixPraser(QByteArray msg, QByteArray boundary)
         else
         {
             //其余的检查attachment属性，有视为附件，没有直接抛弃
-
+            if(headMap.value("content-disposition").startsWith("attachment"))
+            {
+                QByteArray attCont = content;
+                if(headMap.value("content-transfer-encoding") == "quoted-printable")
+                {
+                     attCont = MIME::Quoted_printableDecoder(content);
+                }
+                else if(headMap.value("content-transfer-encoding") == "base64")
+                {
+                    attCont = QByteArray::fromBase64(content);
+                }
+                this->attContList.append(attCont);
+                QString fileName = MIME::HeadDecoding(headMap.value("filename"));
+                if(fileName.isEmpty())
+                    fileName = "未命名_" + QTime::currentTime().toString();
+                this->attNameList.append(fileName);
+            }
         }
     }
 }
@@ -410,7 +448,37 @@ void MailPraser::relatedPraser(QByteArray msg, QByteArray boundary)
         }
         else
         {
-            //其余的视为内嵌文件，添加到内嵌文件列表中
+            //其余的视为内嵌文件，保存到缓存目录中，然后更新html中的cid为filepath
+            //file:///home/yin/Doc
+            //<img src="file://D:/我的下载/安装包/2.png"  width="112" height="112">
+            if(headMap.value("content-disposition").startsWith("inline"))
+            {
+                QByteArray inlineCont = content;
+                if(headMap.value("content-transfer-encoding") == "quoted-printable")
+                {
+                     inlineCont = MIME::Quoted_printableDecoder(content);
+                }
+                else if(headMap.value("content-transfer-encoding") == "base64")
+                {
+                    inlineCont = QByteArray::fromBase64(content);
+                }
+                QString cid = headMap.value("content-id");
+                if(cid.startsWith('<') && cid.endsWith('>'));
+                {
+                    cid = cid.mid(1,cid.size()-2);
+                }
+                QString fileName = MIME::HeadDecoding(headMap.value("filename"));
+                if(fileName.isEmpty())
+                    fileName = "未命名_" + QTime::currentTime().toString();
+                QString filePath = "cache/"+fileName;
+                QDir dir;
+                dir.mkpath(filePath);
+                QFile file(filePath);
+                file.open(QIODevice::WriteOnly);
+                file.write(inlineCont);
+                file.close();
+                this->cidTOpath.insert(cid,filePath);
+            }
         }
     }
 }
@@ -498,4 +566,41 @@ void MailPraser::cutMultipart(QByteArray msg, QByteArray boundary, QList<QByteAr
         }
         boundaryIndex = nextBoundaryIndex;
     }
+}
+
+MIMEApplication::MIMEApplication(const QString filePath, int type, bool isAttachment)
+{
+    if(3 != type/10)
+    {
+        qDebug()<<"mimeapp type err"<<endl;
+        return;
+    }
+    QFile file(filePath);
+    if(!file.open(QIODevice::ReadOnly))
+    {
+        qDebug()<<"mimeapp load error"<<endl;
+        return;
+    }
+    QFileInfo fileInfo(filePath);
+    QByteArray attr;
+    attr.append("name=\"");
+    attr.append(HeadEncoding(fileInfo.fileName().toUtf8(),MIME::UTF8,false));
+    attr.append("\"");
+    addHead("Content-Type",convertMIMEType(type) + "; " + attr);
+    addHead("Content-Transfer-Encoding","base64");
+    if(isAttachment)
+    {
+        attr.insert(0,"file");
+        addHead("Content-Disposition",QByteArray("attachment;") + attr);
+    }
+    QByteArray rawCont = file.readAll().toBase64();
+    for(int i = 0;i < rawCont.size();i ++)
+    {
+        this->content.append(rawCont.at(i));
+        if((i % 76) == 0)
+        {
+            this->content.append("\r\n");
+        }
+    }
+    this->content.append("\r\n");
 }

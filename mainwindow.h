@@ -5,14 +5,10 @@
 #include "smaildb.h"
 #include <QMainWindow>
 #include <QByteArray>
-#include <QSqlDatabase>
-#include <QShowEvent>
 #include <QList>
-#include <QListWidget>
-#include <QListWidgetItem>
 #include <QTcpSocket>
-#include <QUrl>
 #include <QModelIndex>
+#include <QSortFilterProxyModel>
 
 namespace Ui {
 class MainWindow;
@@ -34,11 +30,13 @@ private slots:
     void slotReadMail(QModelIndex index);
     void slotRefreshMail();
     void slotAfterShow();
+    void slotSearch(QString keywrod);
 private:
     Ui::MainWindow *ui;
     QList<User*> userList;
     User *curUser;
     sMailDB *db;
+    QSortFilterProxyModel *model;
 };
 
 

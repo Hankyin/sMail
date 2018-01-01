@@ -1,14 +1,13 @@
 #include "user.h"
 #include "mime.h"
+#include "searchwidget.h"
 #include <QObject>
 #include <QSqlRecord>
 #include <QSqlQuery>
 #include <QSqlError>
 #include <QFile>
+#include <QFileDialog>
 #include <QDir>
-#include <QWebView>
-#include <QWebPage>
-#include <QDesktopServices>
 
 User::User(QObject *parent) : QObject(parent)
 {
@@ -21,8 +20,6 @@ User::User(UserInfo &userInfo, QSqlDatabase &db, QObject *parent) :QObject(paren
     this->setDatabase(db);
     this->pop = new POP(this);
     this->smtp = new SMTP(this);
-    this->webView = new QWebView;
-    webView->page()->setLinkDelegationPolicy(QWebPage::DelegateAllLinks);
     setConnection();
 }
 
@@ -35,7 +32,6 @@ User::User(User &user) : QObject(user.parent())
 
 User::~User()
 {
-    delete this->webView;
 }
 
 void User::setConnection()
@@ -45,7 +41,6 @@ void User::setConnection()
     connect(this->pop,SIGNAL(topFinish(int,QByteArray)),this,SLOT(slotRefreshMailList_top(int,QByteArray)));
     connect(this->pop,SIGNAL(down(bool)),this,SLOT(slotRefreshMailList_down()));
     connect(this->pop,SIGNAL(retrFinish(int,QByteArray)),this,SLOT(slotRetr(int,QByteArray)));
-    connect(this->webView,SIGNAL(linkClicked(QUrl)),this,SLOT(slotOpenExternalLink(QUrl)));
 }
 
 void User::setUserInfo(UserInfo &userInfo)
@@ -83,6 +78,16 @@ void User::refreshMailList()
     this->pop->stat();
 }
 
+QStringList User::getContactList()
+{
+    return this->mailModel->getContactList();
+}
+
+void User::search(QString &keyword)
+{
+
+}
+
 void User::slotRefreshMailList_stat(uint mailCount)
 {
     for(uint i = 1;i <= mailCount; i++)
@@ -111,8 +116,8 @@ void User::slotRefreshMailList_top(int mailIndex, QByteArray head)
 {
     MailPraser praser(head);
     QString uid = this->mailUIDIndex.value(mailIndex);
-    QString senderName = "todo";
-    QString senderMail = "todo";
+    QString senderName = praser.getSenderName();
+    QString senderMail = praser.getSenderMail();
     QDateTime sendDate = praser.getDateTime();
     QString subject = praser.getSubject();
     this->mailModel->insert(uid,mailIndex,sendDate.toTime_t(),senderName,senderMail,subject);
@@ -141,15 +146,11 @@ void User::slotSendDown()
 void User::slotRetr(int mailIndex, QByteArray mail)
 {
     MailPraser praser(mail);
-    webView->setHtml(praser.getHtml());
-    webView->show();
+    MailShowWidget *mailShowWidget = new MailShowWidget();
+    mailShowWidget->setPraser(praser);
+    mailShowWidget->show();
     QString uid = this->mailModel->getUID(mailIndex);
     writeMail(mail,uid);
-}
-
-void User::slotOpenExternalLink(const QUrl &url)
-{
-    QDesktopServices::openUrl(url);
 }
 
 void User::changeDir(const QString &dir)
@@ -169,8 +170,9 @@ void User::readMail(const QModelIndex &index)
         QByteArray mail = file.readAll();
         file.close();
         MailPraser praser(mail);
-        webView->setHtml(praser.getHtml());
-        webView->show();
+        MailShowWidget *mailShowWidget = new MailShowWidget();
+        mailShowWidget->setPraser(praser);
+        mailShowWidget->show();
     }
     else
     {

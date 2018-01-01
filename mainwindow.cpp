@@ -5,7 +5,6 @@
 #include "smaildb.h"
 #include <QByteArray>
 #include <QDebug>
-#include <QDateTime>
 #include <QDesktopServices>
 #include <QDir>
 #include <QHBoxLayout>
@@ -15,7 +14,7 @@
 #include <QListWidgetItem>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
-#include <QWebView>
+#include <QSortFilterProxyModel>
 #include <QMessageBox>
 #include <QTimer>
 
@@ -31,6 +30,7 @@ MainWindow::MainWindow(QWidget *parent) :
     connect(ui->mailView,SIGNAL(clicked(QModelIndex)),this,SLOT(slotReadMail(QModelIndex)));
     connect(ui->btWriteMail,SIGNAL(clicked(bool)),this,SLOT(slotWriteMail()));
     connect(ui->btRefresh,SIGNAL(clicked(bool)),this,SLOT(slotRefreshMail()));
+    connect(ui->lineEdit,SIGNAL(textChanged(QString)),this,SLOT(slotSearch(QString)));
     QTimer::singleShot(500,this,SLOT(slotAfterShow()));
 }
 
@@ -69,12 +69,13 @@ void MainWindow::slotAfterShow()
         this->close();
     }
     this->curUser = this->userList.at(0);
-
     ui->dirView->setModel(this->curUser->getDirModel());
-    ui->mailView->setModel(this->curUser->getMailModel());
+    QAbstractItemModel *mailModel = this->curUser->getMailModel();
+    this->model = new QSortFilterProxyModel(this);
+    model->setSourceModel(mailModel);
+    ui->mailView->setModel(model);
 
-
-
+    ui->mailView->setSortingEnabled(true);
     ui->mailView->setSelectionBehavior(QAbstractItemView::SelectRows);
     ui->mailView->setSelectionMode ( QAbstractItemView::SingleSelection);
     ui->mailView->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -85,5 +86,11 @@ void MainWindow::slotAfterShow()
     ui->dirView->setEditTriggers(QAbstractItemView::NoEditTriggers);
     ui->dirView->setSelectionMode ( QAbstractItemView::SingleSelection);
 
-    slotRefreshMail();
+//    slotRefreshMail();
+}
+
+void MainWindow::slotSearch(QString keywrod)
+{
+    this->model->setFilterFixedString(keywrod);
+    this->model->setFilterKeyColumn(-1);
 }

@@ -24,9 +24,9 @@ MailEditWidget::MailEditWidget(User *user, QWidget *parent) :
     this->user = user;
     this->smtp = user->getSMTP();
     ui->editTo->setPlaceholderText("收件人");
-    QCompleter *completer = new QCompleter;
+    QCompleter *completer = new QCompleter(user->getContactList());
     completer->setCompletionMode(QCompleter::PopupCompletion);
-
+    ui->editTo->setCompleter(completer);
     ui->editSubject->setPlaceholderText("主题");
     this->mailWidget = new QWidget();
     QVBoxLayout *layout = new QVBoxLayout(this->mailWidget);
@@ -94,8 +94,34 @@ void MailEditWidget::slotSend()
     {
         if(a == nullptr)
             continue;
-        MIMEImage att(a->getFile(),MIME::image_png,true);
-        mixed.append(att);
+        QString fn = a->getFile();
+        int fti = fn.lastIndexOf('.');
+        QString ft = fn.mid(fti);
+        if(ft.toLower() == "jpeg" || ft.toLower() == "jpg")
+        {
+            MIMEImage att(fn,MIME::image_jpeg,true);
+            mixed.append(att);
+        }
+        else if(ft.toLower() == "png")
+        {
+            MIMEImage att(fn,MIME::image_png,true);
+            mixed.append(att);
+        }
+        else if(ft.toLower() == "pdf")
+        {
+            MIMEApplication att(fn,MIME::application_pdf);
+            mixed.append(att);
+        }
+        else if(ft.toLower() == "zip")
+        {
+            MIMEApplication att(fn,MIME::application_zip);
+            mixed.append(att);
+        }
+        else
+        {
+            MIMEApplication att(fn,MIME::application_octet_stream);
+            mixed.append(att);
+        }
         delete a;
         a = nullptr;
     //attacmhentList中存储的是指针，用完后记得删

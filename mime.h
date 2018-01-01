@@ -28,6 +28,7 @@ public:
         //应用类型 3
         application_pdf = 30,
         application_zip = 31,
+        application_octet_stream = 32,
         //声音类型 4
         audio_mpeg = 40,
         //视频类型 5
@@ -95,7 +96,7 @@ public:
 class MIMEApplication : public MIME
 {
 public:
-    MIMEApplication() {}
+    MIMEApplication(const QString filePath, int type, bool isAttachment = true);
 };
 
 class MIMEAudio : public MIME
@@ -113,14 +114,21 @@ public:
 class MailPraser
 {
 public:
+    MailPraser() {}
     MailPraser(QByteArray mail);
     QString getFrom() {return this->from;}
+    QString getSenderName() {return this->senderName;}
+    QString getSenderMail() {return this->senderMail;}
     QString getTo() {return this->to;}
     QString getSubject() {return this->subject;}
     QDateTime getDateTime() {return this->datetime;}
     QString getPlain() {return this->plain;}
     QString getHtml() {return this->html;}
+    int getAttCount() {return attContList.size();}
+    const QByteArray& getAttCont(int index) {return this->attContList.at(index);}
+    const QString& getAttName(int index) {return this->attNameList.at(index);}
 private:
+    void praser(QByteArray &mail);
     QMap<QByteArray,QByteArray> headPraser(QByteArray head);
     void mixPraser(QByteArray msg, QByteArray boundary);
     void relatedPraser(QByteArray msg,QByteArray boundary);
@@ -129,11 +137,16 @@ private:
     void cutHeadAndContent(QByteArray msg,QByteArray &msgHead,QByteArray &msgContent);
     void cutMultipart(QByteArray msg, QByteArray boundary, QList<QByteArray> &subMsgList);
     QString from;
+    QString senderName;
+    QString senderMail;
     QString to;
     QString subject;
     QDateTime datetime;
     QString plain;
     QString html;
+    QList<QByteArray> attContList;
+    QList<QString> attNameList;
+    QMap<QString,QString> cidTOpath;
 };
 
 #endif // MAIL_H

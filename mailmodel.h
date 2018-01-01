@@ -26,6 +26,7 @@ public:
     bool insert(const QString &UID, int MIndex, int SendDate, const QString &SenderName,
                 const QString &SenderMail, const QString &Subject, const QString dir = QString("收件箱"));
     QString getUID(int mailIndex);
+    QStringList getContactList();
 signals:
 
 public slots:

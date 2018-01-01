@@ -5,12 +5,12 @@
 #include "smtp.h"
 #include "mailmodel.h"
 #include "maileditwidget.h"
+#include "mailshowwidget.h"
 #include <QObject>
 #include <QSqlDatabase>
 #include <QSqlTableModel>
 #include <QList>
 #include <QMap>
-#include <QWebView>
 
 class UserInfo
 {
@@ -51,6 +51,8 @@ public:
     void readMail(const QModelIndex &index);
     void sendMail();
     void refreshMailList();
+    QStringList getContactList();
+    void search(QString &keyword);
 signals:
     void sendMailDown(bool err);
 private slots:
@@ -60,7 +62,6 @@ private slots:
     void slotRefreshMailList_down();
     void slotSendDown();
     void slotRetr(int mailIndex,QByteArray mail);
-    void slotOpenExternalLink(const QUrl &url);
 private:
     UserInfo userInfo;
     QSqlDatabase database;
@@ -70,7 +71,6 @@ private:
     POP *pop;
     SMTP *smtp;
     QList<QByteArray> newUIDList;
-    QWebView *webView;
     MailEditWidget *mailEditWidget;
     void POPLogin();
     void writeMail(const QString &mail, const QString &fileName);

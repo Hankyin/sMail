@@ -139,6 +139,20 @@ QString MailModel::getUID(int mailIndex)
     return uid;
 }
 
+QStringList MailModel::getContactList()
+{
+    QStringList contactList;
+    QSqlQuery query(this->database);
+    QString select = "SELECT DISTINCT SenderMail "
+                     "FROM %1 ";
+    bool ok = query.exec(select.arg(this->tableName));
+    while (query.next())
+    {
+        contactList<<query.value(0).toString();
+    }
+    return contactList;
+}
+
 void MailModel::setDir(const QString &dir)
 {
     if(dir.isEmpty())

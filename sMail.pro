@@ -34,7 +34,9 @@ SOURCES += \
     attachmentwidget.cpp \
     smaildb.cpp \
     user.cpp \
-    mailmodel.cpp
+    mailmodel.cpp \
+    mailshowwidget.cpp \
+    searchwidget.cpp
 
 HEADERS += \
         mainwindow.h \
@@ -46,12 +48,15 @@ HEADERS += \
     attachmentwidget.h \
     smaildb.h \
     user.h \
-    mailmodel.h
+    mailmodel.h \
+    mailshowwidget.h \
+    searchwidget.h
 
 FORMS += \
         mainwindow.ui \
     maileditwidget.ui \
-    logindialog.ui
+    logindialog.ui \
+    searchwidget.ui
 
 RESOURCES += \
     res.qrc
