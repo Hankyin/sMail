@@ -3,6 +3,7 @@
 
 #include <QObject>
 #include <QTcpSocket>
+#include <QSslSocket>
 #include <QStringList>
 #include <QList>
 #include <QByteArray>
@@ -87,11 +88,12 @@ public slots:
     void slotError();
 private:
     QTcpSocket *tcpSocket;
+    QSslSocket *sslSocket;
     bool isDebugMode = false;
     bool processing = false;
     QString popAddr;
     uint port;
-    bool ssl;
+    bool ssl = false;
     QList<PCommend> POPCMDList;
     PCommend curCmd;
     int curState = Offline;

@@ -3,6 +3,7 @@
 
 #include <QObject>
 #include <QTcpSocket>
+#include <QSslSocket>
 #include <QByteArray>
 #include <QStringList>
 #include <QList>
@@ -80,7 +81,8 @@ private:
     QList<SCommend> SMTPCMDList;
     SCommend curCMD;
     QByteArray receiveBuf;
-    QTcpSocket tcpSocket;
+    QTcpSocket *tcpSocket;
+    QSslSocket *sslSocket;
     QString errorString;
 };
 

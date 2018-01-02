@@ -4,9 +4,14 @@ SMTP::SMTP(QObject *parent)
     : QObject(parent)
 {
     connect(this,SIGNAL(sendCmd()),this,SLOT(slotSend()));
-    connect(&tcpSocket,SIGNAL(error(QAbstractSocket::SocketError)),this,SLOT(slotError()));
-    connect(&tcpSocket,SIGNAL(connected()),this,SLOT(slotConnedted()));
-    connect(&tcpSocket,SIGNAL(readyRead()),this,SLOT(slotReceive()));
+    this->tcpSocket = new QTcpSocket(this);
+    connect(this->tcpSocket,SIGNAL(error(QAbstractSocket::SocketError)),this,SLOT(slotError()));
+    connect(this->tcpSocket,SIGNAL(connected()),this,SLOT(slotConnedted()));
+    connect(this->tcpSocket,SIGNAL(readyRead()),this,SLOT(slotReceive()));
+    this->sslSocket = new QSslSocket(this);
+    connect(this->sslSocket,SIGNAL(encrypted()),this,SLOT(slotConnedted()));
+    connect(this->sslSocket,SIGNAL(readyRead()),this,SLOT(slotReceive()));
+    connect(this->sslSocket,SIGNAL(error(QAbstractSocket::SocketError)),this,SLOT(slotError()));
 }
 
 void SMTP::setServerAddr(const QString &smtpServer, int port, bool ssl)
@@ -99,11 +104,26 @@ void SMTP::slotSend()
     }
     if(curCMD.cmdType == SMTPCMD::CONNECT)
     {
-        this->tcpSocket.connectToHost(this->smtpServer,this->port);
+        if(this->ssl)
+        {
+            this->sslSocket->connectToHostEncrypted(this->smtpServer,this->port);
+        }
+        else
+        {
+            this->tcpSocket->connectToHost(this->smtpServer,this->port);
+        }
     }
     else
     {
-        qint64 byteNum = tcpSocket.write(sendBlock);
+        qint64 byteNum;
+        if(this->ssl)
+        {
+            byteNum = this->sslSocket->write(sendBlock);
+        }
+        else
+        {
+            byteNum = this->tcpSocket->write(sendBlock);
+        }
         if(!byteNum)
         {
             this->errorString = "can't write tcp";
@@ -116,7 +136,15 @@ void SMTP::slotSend()
 
 void SMTP::slotReceive()
 {
-    QByteArray buf = tcpSocket.readAll();
+    QByteArray buf;
+    if(this->ssl)
+    {
+        buf = this->sslSocket->readAll();
+    }
+    else
+    {
+        buf = this->tcpSocket->readAll();
+    }
     this->receiveBuf.append(buf);
     if(!receiveBuf.endsWith("\r\n"))
     {
@@ -161,7 +189,10 @@ void SMTP::slotError()
     this->isConnected = false;
     this->SMTPCMDList.clear();
     this->receiveBuf.clear();
-    this->errorString = tcpSocket.errorString();
+    if(this->ssl)
+        this->errorString = this->sslSocket->errorString();
+    else
+        this->errorString = tcpSocket->errorString();
     emit error(SMTPError::TCPError);
 }
 

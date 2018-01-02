@@ -1,4 +1,6 @@
 #include "pop.h"
+#include <QSslError>
+#include <QSslConfiguration>
 
 PCommend::PCommend(int cmd, QList<QByteArray> para)
 {
@@ -27,11 +29,19 @@ POP::POP(QObject *parent) : QObject(parent)
     connect(this->tcpSocket,SIGNAL(readyRead()),this,SLOT(slotReceive()));
     connect(this->tcpSocket,SIGNAL(connected()),this,SLOT(slotConnedted()));
     connect(this->tcpSocket,SIGNAL(error(QAbstractSocket::SocketError)),this,SLOT(slotError()));
+    this->sslSocket = new QSslSocket(this);
+    QSslConfiguration config;
+    config.setPeerVerifyMode(QSslSocket::VerifyNone);
+    config.setProtocol(QSsl::TlsV1_0);
+    this->sslSocket->setSslConfiguration(config);
+    connect(this->sslSocket, SIGNAL(encrypted()), this, SLOT(slotConnedted()));
+    connect(this->sslSocket,SIGNAL(readyRead()),this,SLOT(slotReceive()));
+    connect(this->sslSocket,SIGNAL(error(QAbstractSocket::SocketError)),this,SLOT(slotError()));
+    connect(this->sslSocket,SIGNAL(sslErrors(QList<QSslError>)),this,SLOT(slotError()));
 }
 
 POP::~POP()
 {
-    delete this->tcpSocket;
 }
 
 void POP::setDebugMode(bool debug)
@@ -176,10 +186,21 @@ void POP::slotSend()
             int cmd = this->curCmd.cmdType;
             if(cmd == POPCMD::CONNECT)
             {
-                if(this->tcpSocket->state() == QAbstractSocket::UnconnectedState)
+                if(this->ssl)
                 {
-                    this->tcpSocket->connectToHost(this->popAddr,this->port);
-                    hasSendCmd = true;
+                    if(!this->sslSocket->isEncrypted())
+                    {
+                        this->sslSocket->connectToHostEncrypted(this->popAddr,this->port);
+                        hasSendCmd = true;
+                    }
+                }
+                else
+                {
+                    if(this->tcpSocket->state() == QAbstractSocket::UnconnectedState)
+                    {
+                        this->tcpSocket->connectToHost(this->popAddr,this->port);
+                        hasSendCmd = true;
+                    }
                 }
             }
         }
@@ -208,7 +229,16 @@ void POP::slotSend()
 
 void POP::slotReceive()
 {
-    QByteArray receive = this->tcpSocket->readAll();
+    QByteArray receive;
+    if(this->ssl)
+    {
+        receive.resize(this->sslSocket->bytesAvailable());
+        this->sslSocket->read(receive.data(),receive.size());
+    }
+    else
+    {
+        receive= this->tcpSocket->readAll();
+    }
     this->receiveBuf.append(receive);
     QByteArray endFlag;
     if(curCmd.cmdType < POP::RETR)
@@ -292,6 +322,7 @@ void POP::slotConnedted()
     if(isDebugMode)
         qDebug()<<"connected to pop"<<endl;
     this->curState = POPState::Connected;
+    emit sendCmd();
 }
 
 void POP::slotError()
@@ -302,7 +333,11 @@ void POP::slotError()
         return;
     }
     this->POPCMDList.clear();
-    this->errorString = this->tcpSocket->errorString();
+    if(this->ssl)
+        this->errorString = this->sslSocket->errorString();
+    else
+        this->errorString = tcpSocket->errorString();
+    qDebug()<<this->sslSocket->sslErrors().at(0).errorString()<<endl;
     this->curState = Offline;
     emit error(POPError::TCPError);
 }
@@ -316,7 +351,15 @@ void POP::POPWrite(QByteArray block)
     {
         qDebug()<<sendBlock<<endl;
     }
-    qint64 byteNum = this->tcpSocket->write(sendBlock);
+    qint64 byteNum;
+    if(this->ssl)
+    {
+        byteNum = this->sslSocket->write(sendBlock);
+    }
+    else
+    {
+        byteNum = this->tcpSocket->write(sendBlock);
+    }
     if(!byteNum)
     {
         this->errorString = "can't write tcp";
