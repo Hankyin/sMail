@@ -8,3 +8,5 @@ MailModel 用户邮件模型类，
 MIME系列类用来构造邮件，但管用的只有MIMEText，MIMEVideo和MIMEApplication，
 MailPraser类用来解析邮件。
 界面类将用户的请求转换为User类的某个方法调用，
+
+注：如果想要更换用户，请直接删除根目录下的sMail.db,然后你就可以重新登录了
